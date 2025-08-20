@@ -19,3 +19,7 @@ Sincronizza **bidirezionalmente** (due o tre) Google Calendar, con:
 
 ```bash
 pip install -r requirements.txt
+
+
+## Riconoscimenti
+Questo progetto è stato sviluppato da Alberto Almagioni con il supporto di GPT-5 Thinking (ChatGPT) per design e pair-programming.
