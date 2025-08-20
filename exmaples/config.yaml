@@ -1,0 +1,23 @@
+window_days_past: 30
+window_days_future: 365
+prefix_origin_in_title: true
+sync_delete: true
+sync_tag_in_description: "Sincronizzato da gcal_trisync"
+
+ignore_if_summary_contains: ["compleanno"]
+ignore_event_types: []   # es. ['fromGmail'] per ignorarli
+skip_if_title_has_known_prefix: true
+
+# visibilità copie
+default_copy_visibility: private
+
+calendars:
+  - name: WORK
+    calendar_id: primary
+    credentials_file: creds/work_oauth_client.json
+    token_file: tokens/work.token.json
+  - name: PERS
+    calendar_id: primary
+    credentials_file: creds/personal_oauth_client.json
+    token_file: tokens/personal.token.json
+  # - name: ASSOC ...

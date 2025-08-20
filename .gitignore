@@ -1,0 +1,24 @@
+# credenziali e token (non committare MAI)
+creds/
+tokens/
+
+# ambienti virtuali
+.venv/
+venv/
+
+# cache/python
+__pycache__/
+*.pyc
+
+# log
+*.log
+sync.log
+
+# IDE/editor
+.vscode/
+.idea/
+*.code-workspace
+
+# macOS / Windows
+.DS_Store
+Thumbs.db
