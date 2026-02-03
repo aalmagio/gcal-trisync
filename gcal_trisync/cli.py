@@ -11,6 +11,7 @@ import logging
 import sys
 
 from .api import ensure_dirs, get_service
+from .auth import AuthError, check_all_tokens, format_token_report
 from .config import ConfigValidationError, load_config
 from .metrics import MetricsCollector
 from .models import Calendar, SyncContext
@@ -127,6 +128,19 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         help='Save metrics to JSON file'
     )
 
+    # Auth options
+    parser.add_argument(
+        '--check-auth',
+        action='store_true',
+        dest='check_auth',
+        help='Check authentication status for all accounts and exit'
+    )
+    parser.add_argument(
+        '--reauth',
+        action='store_true',
+        help='Force re-authentication for all accounts'
+    )
+
     return parser.parse_args(args)
 
 
@@ -134,7 +148,8 @@ def initialize_calendars(
     cfg: dict,
     auth_method: str,
     login_hint: str | None,
-    port: int
+    port: int,
+    force_reauth: bool = False
 ) -> dict[str, Calendar]:
     """
     Initialize calendar services from configuration.
@@ -144,9 +159,13 @@ def initialize_calendars(
         auth_method: Authentication method ('local' or 'console')
         login_hint: Email to pre-fill in login
         port: Port for local OAuth server
+        force_reauth: Force re-authentication for all accounts
 
     Returns:
         Dictionary mapping calendar names to Calendar objects
+
+    Raises:
+        AuthError: If authentication fails for any calendar
     """
     calendars: dict[str, Calendar] = {}
 
@@ -156,7 +175,9 @@ def initialize_calendars(
             c['token_file'],
             auth_method=auth_method,
             login_hint=login_hint,
-            port=port
+            port=port,
+            account_name=c['name'],
+            force_reauth=force_reauth,
         )
 
         cal = Calendar(
@@ -211,14 +232,27 @@ def main(args: list[str] | None = None) -> int:
 
     ensure_dirs()
 
+    # Handle --check-auth
+    if parsed.check_auth:
+        infos = check_all_tokens(cfg['calendars'])
+        print(format_token_report(infos))
+        all_usable = all(info.is_usable() for info in infos)
+        return 0 if all_usable else 1
+
     # Initialize calendars
     try:
         calendars = initialize_calendars(
             cfg,
             parsed.auth,
             parsed.login_hint,
-            parsed.port
+            parsed.port,
+            force_reauth=parsed.reauth,
         )
+    except AuthError as e:
+        logger.error(f"Authentication failed: {e}")
+        if e.status and e.status.value == 'revoked':
+            logger.info("Run with --reauth to re-authenticate this account")
+        return 1
     except Exception as e:
         logger.error(f"Failed to initialize calendars: {e}")
         return 1

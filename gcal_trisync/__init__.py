@@ -83,6 +83,14 @@ from .metrics import (
     MetricsCollector,
     SyncMetrics,
 )
+from .auth import (
+    AuthError,
+    TokenInfo,
+    TokenManager,
+    TokenStatus,
+    check_all_tokens,
+    format_token_report,
+)
 from .cli import main
 
 __all__ = [
@@ -154,6 +162,14 @@ __all__ = [
     'CalendarMetrics',
     'MetricsCollector',
     'SyncMetrics',
+
+    # Auth
+    'AuthError',
+    'TokenInfo',
+    'TokenManager',
+    'TokenStatus',
+    'check_all_tokens',
+    'format_token_report',
 
     # CLI
     'main',

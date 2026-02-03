@@ -12,17 +12,12 @@ import os
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+from .auth import TokenManager
 from .retry import with_retry, rate_limited, default_rate_limiter
 
 logger = logging.getLogger(__name__)
-
-SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 # HTTP 410 Gone indicates sync token is invalid/expired
 SYNC_TOKEN_EXPIRED_STATUS = 410
@@ -60,10 +55,15 @@ def get_service(
     token_file: str,
     auth_method: str = 'local',
     login_hint: Optional[str] = None,
-    port: int = 0
+    port: int = 0,
+    account_name: str = '',
+    force_reauth: bool = False
 ) -> Any:
     """
     Initialize and return Google Calendar API service.
+
+    Uses TokenManager for robust token handling with proactive refresh,
+    revoked token detection, and automatic re-authentication.
 
     Args:
         credentials_file: Path to OAuth credentials JSON
@@ -71,47 +71,27 @@ def get_service(
         auth_method: 'local' for browser flow, 'console' for manual code entry
         login_hint: Email to pre-fill in login
         port: Port for local OAuth server (0 for auto-select)
+        account_name: Label for this account (for logging)
+        force_reauth: Force re-authentication even if token is valid
 
     Returns:
         Google Calendar API service object
+
+    Raises:
+        AuthError: If authentication cannot be completed
     """
-    creds = None
+    manager = TokenManager(
+        credentials_file=credentials_file,
+        token_file=token_file,
+        account_name=account_name,
+    )
 
-    if os.path.exists(token_file):
-        creds = Credentials.from_authorized_user_file(token_file, SCOPES)
-
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                credentials_file, SCOPES, redirect_uri=None
-            )
-
-            if auth_method == 'console':
-                auth_url, _ = flow.authorization_url(
-                    access_type='offline',
-                    include_granted_scopes='true',
-                    prompt='consent',
-                    login_hint=login_hint
-                )
-                print("\nOpen this URL in an incognito window and paste the code here:\n")
-                print(auth_url)
-                code = input("\nCode: ").strip()
-                flow.fetch_token(code=code)
-                creds = flow.credentials
-            else:
-                creds = flow.run_local_server(
-                    port=port,
-                    prompt='consent',
-                    authorization_prompt_message=None,
-                    login_hint=login_hint
-                )
-
-        with open(token_file, 'w', encoding='utf-8') as token:
-            token.write(creds.to_json())
-
-    return build('calendar', 'v3', credentials=creds, cache_discovery=False)
+    return manager.get_service(
+        auth_method=auth_method,
+        login_hint=login_hint,
+        port=port,
+        force_reauth=force_reauth,
+    )
 
 
 @with_retry()
