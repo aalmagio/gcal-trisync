@@ -18,6 +18,8 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+from .retry import with_retry, rate_limited, default_rate_limiter
+
 logger = logging.getLogger(__name__)
 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
@@ -112,6 +114,7 @@ def get_service(
     return build('calendar', 'v3', credentials=creds, cache_discovery=False)
 
 
+@with_retry()
 def list_events(
     service: Any,
     calendar_id: str,
@@ -136,6 +139,7 @@ def list_events(
     page_token: Optional[str] = None
 
     while True:
+        default_rate_limiter.acquire()
         resp = service.events().list(
             calendarId=calendar_id,
             timeMin=time_min,
@@ -155,6 +159,7 @@ def list_events(
     return events
 
 
+@with_retry()
 def list_events_full_sync(
     service: Any,
     calendar_id: str,
@@ -195,6 +200,7 @@ def list_events_full_sync(
         if time_min or time_max:
             params['orderBy'] = 'startTime'
 
+        default_rate_limiter.acquire()
         resp = service.events().list(**params).execute()
 
         events.extend(resp.get('items', []))
@@ -214,6 +220,7 @@ def list_events_full_sync(
     )
 
 
+@with_retry()
 def list_events_incremental(
     service: Any,
     calendar_id: str,
@@ -254,6 +261,7 @@ def list_events_incremental(
             # Remove syncToken when using pageToken
             del params['syncToken']
 
+        default_rate_limiter.acquire()
         resp = service.events().list(**params).execute()
 
         for event in resp.get('items', []):
@@ -320,6 +328,8 @@ def sync_events(
     return list_events_full_sync(service, calendar_id, time_min, time_max)
 
 
+@with_retry()
+@rate_limited()
 def find_event_by_chain(
     service: Any,
     calendar_id: str,
@@ -347,6 +357,8 @@ def find_event_by_chain(
     return items[0] if items else None
 
 
+@with_retry()
+@rate_limited()
 def create_event(
     service: Any,
     calendar_id: str,
@@ -372,6 +384,8 @@ def create_event(
     ).execute()
 
 
+@with_retry()
+@rate_limited()
 def update_event(
     service: Any,
     calendar_id: str,
@@ -400,6 +414,8 @@ def update_event(
     ).execute()
 
 
+@with_retry()
+@rate_limited()
 def patch_event(
     service: Any,
     calendar_id: str,
@@ -428,6 +444,8 @@ def patch_event(
     ).execute()
 
 
+@with_retry()
+@rate_limited()
 def delete_event(
     service: Any,
     calendar_id: str,
@@ -450,6 +468,8 @@ def delete_event(
     ).execute()
 
 
+@with_retry()
+@rate_limited()
 def get_event(
     service: Any,
     calendar_id: str,

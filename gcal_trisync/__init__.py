@@ -68,6 +68,16 @@ from .storage import (
     StateStorage,
     SyncState,
 )
+from .retry import (
+    RateLimiter,
+    RateLimitError,
+    RetryableError,
+    default_rate_limiter,
+    is_retryable_error,
+    rate_limited,
+    robust_api_call,
+    with_retry,
+)
 from .cli import main
 
 __all__ = [
@@ -124,6 +134,16 @@ __all__ = [
     'CalendarState',
     'StateStorage',
     'SyncState',
+
+    # Retry & Rate Limiting
+    'RateLimiter',
+    'RateLimitError',
+    'RetryableError',
+    'default_rate_limiter',
+    'is_retryable_error',
+    'rate_limited',
+    'robust_api_call',
+    'with_retry',
 
     # CLI
     'main',
