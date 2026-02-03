@@ -44,10 +44,12 @@ from .sync import (
     process_chains,
     process_unsynced_events,
     run_sync,
+    run_sync_incremental,
     should_skip_event,
     update_if_diff,
 )
 from .api import (
+    SyncResult,
     create_event,
     delete_event,
     ensure_dirs,
@@ -55,8 +57,16 @@ from .api import (
     get_event,
     get_service,
     list_events,
+    list_events_full_sync,
+    list_events_incremental,
     patch_event,
+    sync_events,
     update_event,
+)
+from .storage import (
+    CalendarState,
+    StateStorage,
+    SyncState,
 )
 from .cli import main
 
@@ -91,10 +101,12 @@ __all__ = [
     'process_chains',
     'process_unsynced_events',
     'run_sync',
+    'run_sync_incremental',
     'should_skip_event',
     'update_if_diff',
 
     # API
+    'SyncResult',
     'create_event',
     'delete_event',
     'ensure_dirs',
@@ -102,8 +114,16 @@ __all__ = [
     'get_event',
     'get_service',
     'list_events',
+    'list_events_full_sync',
+    'list_events_incremental',
     'patch_event',
+    'sync_events',
     'update_event',
+
+    # Storage
+    'CalendarState',
+    'StateStorage',
+    'SyncState',
 
     # CLI
     'main',

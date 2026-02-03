@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from google.auth.transport.requests import Request
@@ -20,6 +21,30 @@ from googleapiclient.errors import HttpError
 logger = logging.getLogger(__name__)
 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
+
+# HTTP 410 Gone indicates sync token is invalid/expired
+SYNC_TOKEN_EXPIRED_STATUS = 410
+
+
+@dataclass
+class SyncResult:
+    """
+    Result of a calendar sync operation.
+
+    Attributes:
+        events: List of events (all or changed)
+        next_sync_token: Token for next incremental sync
+        is_full_sync: Whether this was a full sync
+        deleted_event_ids: IDs of deleted events (incremental only)
+    """
+    events: list[dict[str, Any]]
+    next_sync_token: Optional[str] = None
+    is_full_sync: bool = False
+    deleted_event_ids: list[str] = None
+
+    def __post_init__(self):
+        if self.deleted_event_ids is None:
+            self.deleted_event_ids = []
 
 
 def ensure_dirs() -> None:
@@ -128,6 +153,171 @@ def list_events(
             break
 
     return events
+
+
+def list_events_full_sync(
+    service: Any,
+    calendar_id: str,
+    time_min: Optional[str] = None,
+    time_max: Optional[str] = None
+) -> SyncResult:
+    """
+    Perform a full sync of all events in a calendar.
+
+    Returns all events and a sync token for future incremental syncs.
+
+    Args:
+        service: Google Calendar API service
+        calendar_id: Calendar ID to query
+        time_min: Optional start of time window (ISO format)
+        time_max: Optional end of time window (ISO format)
+
+    Returns:
+        SyncResult with all events and next sync token
+    """
+    events: list[dict[str, Any]] = []
+    page_token: Optional[str] = None
+    next_sync_token: Optional[str] = None
+
+    while True:
+        params = {
+            'calendarId': calendar_id,
+            'singleEvents': True,
+            'maxResults': 2500,
+            'pageToken': page_token,
+        }
+
+        # Add time bounds if specified
+        if time_min:
+            params['timeMin'] = time_min
+        if time_max:
+            params['timeMax'] = time_max
+        if time_min or time_max:
+            params['orderBy'] = 'startTime'
+
+        resp = service.events().list(**params).execute()
+
+        events.extend(resp.get('items', []))
+        page_token = resp.get('nextPageToken')
+        next_sync_token = resp.get('nextSyncToken')
+
+        if not page_token:
+            break
+
+    logger.info(f"Full sync: retrieved {len(events)} events")
+
+    return SyncResult(
+        events=events,
+        next_sync_token=next_sync_token,
+        is_full_sync=True,
+        deleted_event_ids=[]
+    )
+
+
+def list_events_incremental(
+    service: Any,
+    calendar_id: str,
+    sync_token: str
+) -> SyncResult:
+    """
+    Perform an incremental sync using a sync token.
+
+    Returns only events that have changed since the token was issued.
+    Deleted events are returned with status='cancelled'.
+
+    Args:
+        service: Google Calendar API service
+        calendar_id: Calendar ID to query
+        sync_token: Token from previous sync
+
+    Returns:
+        SyncResult with changed events and new sync token
+
+    Raises:
+        HttpError: If sync token is invalid (410 Gone) or other API error
+    """
+    events: list[dict[str, Any]] = []
+    deleted_ids: list[str] = []
+    page_token: Optional[str] = None
+    next_sync_token: Optional[str] = None
+
+    while True:
+        params = {
+            'calendarId': calendar_id,
+            'syncToken': sync_token,
+            'maxResults': 2500,
+            'showDeleted': True,  # Include deleted events
+        }
+
+        if page_token:
+            params['pageToken'] = page_token
+            # Remove syncToken when using pageToken
+            del params['syncToken']
+
+        resp = service.events().list(**params).execute()
+
+        for event in resp.get('items', []):
+            # Deleted events have status='cancelled'
+            if event.get('status') == 'cancelled':
+                deleted_ids.append(event['id'])
+            else:
+                events.append(event)
+
+        page_token = resp.get('nextPageToken')
+        next_sync_token = resp.get('nextSyncToken')
+
+        if not page_token:
+            break
+
+    logger.info(
+        f"Incremental sync: {len(events)} changed, "
+        f"{len(deleted_ids)} deleted"
+    )
+
+    return SyncResult(
+        events=events,
+        next_sync_token=next_sync_token,
+        is_full_sync=False,
+        deleted_event_ids=deleted_ids
+    )
+
+
+def sync_events(
+    service: Any,
+    calendar_id: str,
+    sync_token: Optional[str] = None,
+    time_min: Optional[str] = None,
+    time_max: Optional[str] = None
+) -> SyncResult:
+    """
+    Smart sync: incremental if token available, full otherwise.
+
+    Automatically falls back to full sync if token is expired (410 Gone).
+
+    Args:
+        service: Google Calendar API service
+        calendar_id: Calendar ID to query
+        sync_token: Optional token from previous sync
+        time_min: Start of time window for full sync (ISO format)
+        time_max: End of time window for full sync (ISO format)
+
+    Returns:
+        SyncResult with events and new sync token
+    """
+    if sync_token:
+        try:
+            return list_events_incremental(service, calendar_id, sync_token)
+        except HttpError as e:
+            if e.resp.status == SYNC_TOKEN_EXPIRED_STATUS:
+                logger.warning(
+                    f"Sync token expired for {calendar_id}, "
+                    "performing full sync"
+                )
+            else:
+                raise
+
+    # Full sync (no token or token expired)
+    return list_events_full_sync(service, calendar_id, time_min, time_max)
 
 
 def find_event_by_chain(

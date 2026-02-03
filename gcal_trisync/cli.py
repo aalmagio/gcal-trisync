@@ -13,7 +13,8 @@ import sys
 from .api import ensure_dirs, get_service
 from .config import ConfigValidationError, load_config
 from .models import Calendar, SyncContext
-from .sync import run_sync
+from .storage import StateStorage
+from .sync import run_sync, run_sync_incremental
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,31 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         version='%(prog)s 0.3.0'
     )
 
+    # Incremental sync options
+    parser.add_argument(
+        '--incremental',
+        action='store_true',
+        help='Use incremental sync with sync tokens (faster)'
+    )
+    parser.add_argument(
+        '--full-sync',
+        action='store_true',
+        dest='force_full',
+        help='Force full sync even if sync tokens exist'
+    )
+    parser.add_argument(
+        '--state-file',
+        dest='state_file',
+        default='.trisync_state.json',
+        help='Path to state file for sync tokens (default: .trisync_state.json)'
+    )
+    parser.add_argument(
+        '--clear-state',
+        action='store_true',
+        dest='clear_state',
+        help='Clear saved state and exit'
+    )
+
     return parser.parse_args(args)
 
 
@@ -145,8 +171,18 @@ def main(args: list[str] | None = None) -> int:
 
     setup_logging(parsed.verbose)
 
+    # Handle --clear-state
+    if parsed.clear_state:
+        storage = StateStorage(parsed.state_file)
+        storage.clear()
+        logger.info(f"State cleared from {parsed.state_file}")
+        return 0
+
     if parsed.dry_run:
         logger.info("Running in DRY-RUN mode - no changes will be made")
+
+    if parsed.incremental:
+        logger.info("Using incremental sync mode")
 
     # Load and validate configuration
     try:
@@ -179,7 +215,15 @@ def main(args: list[str] | None = None) -> int:
 
     # Run sync
     try:
-        run_sync(ctx)
+        if parsed.incremental:
+            storage = StateStorage(parsed.state_file)
+            run_sync_incremental(
+                ctx,
+                storage=storage,
+                force_full=parsed.force_full
+            )
+        else:
+            run_sync(ctx)
     except Exception as e:
         logger.error(f"Sync failed: {e}")
         return 1

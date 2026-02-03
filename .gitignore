@@ -14,6 +14,9 @@ __pycache__/
 *.log
 sync.log
 
+# State files (sync tokens)
+.trisync_state.json
+
 # IDE/editor
 .vscode/
 .idea/
