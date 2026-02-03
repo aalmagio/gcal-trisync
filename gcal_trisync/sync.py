@@ -23,6 +23,7 @@ from .api import (
     sync_events,
     update_event,
 )
+from .metrics import MetricsCollector
 from .storage import StateStorage
 from .models import Calendar, SyncContext, VALID_VISIBILITIES
 from .utils import (
@@ -110,7 +111,8 @@ def create_copy_with_visibility(
     target_cal: Calendar,
     source_event: dict[str, Any],
     origin_name: str,
-    chain_id: str
+    chain_id: str,
+    metrics: Optional[MetricsCollector] = None
 ) -> Optional[dict[str, Any]]:
     """
     Create event copy in target calendar with proper visibility.
@@ -121,6 +123,7 @@ def create_copy_with_visibility(
         source_event: Source event to copy
         origin_name: Name of source calendar
         chain_id: Chain ID for linking
+        metrics: Optional metrics collector
 
     Returns:
         Created event or None if dry-run
@@ -155,6 +158,8 @@ def create_copy_with_visibility(
             f"[DRY-RUN] Would create in {target_cal.name}: "
             f"'{(source_event.get('summary', '') or '')[:40]}'"
         )
+        if metrics:
+            metrics.record_create(target_cal.name)
         return None
 
     created = create_event(target_cal.service, target_cal.calendar_id, clone)
@@ -164,6 +169,9 @@ def create_copy_with_visibility(
         f"'{(source_event.get('summary', '') or '')[:40]}'"
     )
 
+    if metrics:
+        metrics.record_create(target_cal.name)
+
     return created
 
 
@@ -171,7 +179,8 @@ def update_if_diff(
     ctx: SyncContext,
     cal: Calendar,
     existing: dict[str, Any],
-    source_model: dict[str, Any]
+    source_model: dict[str, Any],
+    metrics: Optional[MetricsCollector] = None
 ) -> tuple[dict[str, Any], bool]:
     """
     Update event if it differs from source model.
@@ -181,6 +190,7 @@ def update_if_diff(
         cal: Calendar containing the event
         existing: Existing event to potentially update
         source_model: Canonical source data
+        metrics: Optional metrics collector
 
     Returns:
         Tuple of (updated_event, was_changed)
@@ -211,20 +221,27 @@ def update_if_diff(
 
     if ctx.dry_run:
         logger.info(f"[DRY-RUN] Would update in {cal.name}")
+        if metrics:
+            metrics.record_update(cal.name)
         return existing, True
 
     try:
         updated = update_event(cal.service, cal.calendar_id, existing['id'], desired)
+        if metrics:
+            metrics.record_update(cal.name)
         return updated, True
     except HttpError as e:
         logger.error(f"Update failed on {cal.name}: {e}")
+        if metrics:
+            metrics.record_error(cal.name)
         return existing, False
 
 
 def perform_safe_delete(
     ctx: SyncContext,
     chain_id: str,
-    items: list[tuple[str, dict[str, Any]]]
+    items: list[tuple[str, dict[str, Any]]],
+    metrics: Optional[MetricsCollector] = None
 ) -> bool:
     """
     Handle safe deletion when origin event is missing.
@@ -233,6 +250,7 @@ def perform_safe_delete(
         ctx: Sync context
         chain_id: Chain ID of the event chain
         items: List of (calendar_name, event) tuples
+        metrics: Optional metrics collector
 
     Returns:
         True if origin was missing (chain should not be recreated)
@@ -275,13 +293,19 @@ def perform_safe_delete(
                 f"[DRY-RUN] Would delete in {name} (origin missing): "
                 f"chain {chain_id[:8]}"
             )
+            if metrics:
+                metrics.record_delete(name)
             continue
 
         try:
             delete_event(cal.service, cal.calendar_id, ev['id'])
             logger.info(f"[chain {chain_id[:8]}] Deleted in {name} (origin missing)")
+            if metrics:
+                metrics.record_delete(name)
         except HttpError as e:
             logger.error(f"Delete failed on {name}: {e}")
+            if metrics:
+                metrics.record_error(name)
 
     return True
 
@@ -289,7 +313,8 @@ def perform_safe_delete(
 def process_unsynced_events(
     ctx: SyncContext,
     unsynced: list[tuple[str, dict[str, Any]]],
-    chain_map: dict[str, list[tuple[str, dict[str, Any]]]]
+    chain_map: dict[str, list[tuple[str, dict[str, Any]]]],
+    metrics: Optional[MetricsCollector] = None
 ) -> None:
     """
     Process events that haven't been synced yet.
@@ -298,6 +323,7 @@ def process_unsynced_events(
         ctx: Sync context
         unsynced: List of (calendar_name, event) tuples to process
         chain_map: Chain map to update
+        metrics: Optional metrics collector
     """
     for src_name, ev in unsynced:
         chain_id = compute_chain_id(src_name, ev['id'])
@@ -325,6 +351,8 @@ def process_unsynced_events(
                     )
                 except Exception as e:
                     logger.warning(f"Cannot save meta on {src_name}: {e}")
+                    if metrics:
+                        metrics.record_error(src_name)
         else:
             logger.info(f"Note: 'fromGmail' event on {src_name}, skipping patch")
 
@@ -338,16 +366,21 @@ def process_unsynced_events(
                 continue
 
             try:
-                create_copy_with_visibility(ctx, cal, ev, src_name, chain_id)
+                create_copy_with_visibility(
+                    ctx, cal, ev, src_name, chain_id, metrics=metrics
+                )
             except HttpError as e:
                 logger.error(f"Insert failed on {cal.name}: {e}")
+                if metrics:
+                    metrics.record_error(cal.name)
 
         chain_map.setdefault(chain_id, []).append((src_name, ev))
 
 
 def process_chains(
     ctx: SyncContext,
-    chain_map: dict[str, list[tuple[str, dict[str, Any]]]]
+    chain_map: dict[str, list[tuple[str, dict[str, Any]]]],
+    metrics: Optional[MetricsCollector] = None
 ) -> None:
     """
     Process existing event chains for updates and deletions.
@@ -355,7 +388,11 @@ def process_chains(
     Args:
         ctx: Sync context
         chain_map: Map of chain_id to list of (calendar_name, event)
+        metrics: Optional metrics collector
     """
+    if metrics:
+        metrics.record_chains(len(chain_map))
+
     for chain_id, items in chain_map.items():
         # Refresh events to get latest state
         refreshed: list[tuple[str, dict[str, Any]]] = []
@@ -374,7 +411,7 @@ def process_chains(
         items = refreshed
 
         # Handle safe delete
-        if perform_safe_delete(ctx, chain_id, items):
+        if perform_safe_delete(ctx, chain_id, items, metrics=metrics):
             continue
 
         if not items:
@@ -395,18 +432,28 @@ def process_chains(
                 # Missing copy, create it
                 origin = get_private_meta(source_event).get('trisync_origin', source_name)
                 try:
-                    create_copy_with_visibility(ctx, cal, source_event, origin, chain_id)
+                    create_copy_with_visibility(
+                        ctx, cal, source_event, origin, chain_id,
+                        metrics=metrics
+                    )
                     logger.info(f"[chain {chain_id[:8]}] Created missing in {cal.name}")
                 except HttpError as e:
                     logger.error(f"Insert failed on {cal.name}: {e}")
+                    if metrics:
+                        metrics.record_error(cal.name)
             else:
                 # Update existing copy if different
-                _, changed = update_if_diff(ctx, cal, target_ev, model)
+                _, changed = update_if_diff(
+                    ctx, cal, target_ev, model, metrics=metrics
+                )
                 if changed:
                     logger.info(f"[chain {chain_id[:8]}] Updated in {cal.name}")
 
 
-def run_sync(ctx: SyncContext) -> None:
+def run_sync(
+    ctx: SyncContext,
+    metrics: Optional[MetricsCollector] = None
+) -> Optional[MetricsCollector]:
     """
     Run the full synchronization process (legacy mode).
 
@@ -415,14 +462,24 @@ def run_sync(ctx: SyncContext) -> None:
 
     Args:
         ctx: Sync context with calendars initialized
+        metrics: Optional metrics collector (created automatically if None)
+
+    Returns:
+        MetricsCollector with sync results, or None if metrics not requested
     """
+    if metrics is None:
+        metrics = MetricsCollector(dry_run=ctx.dry_run, incremental=False)
+
+    metrics.start()
     time_min, time_max = get_time_window(ctx.config)
 
     # Fetch all events
     cal_events: dict[str, list[dict[str, Any]]] = {}
     for cal in ctx.get_all_calendars():
+        metrics.start_fetch(cal.name)
         evs = list_events(cal.service, cal.calendar_id, time_min, time_max)
         cal_events[cal.name] = evs
+        metrics.record_fetch(cal.name, len(evs), sync_type='full')
         logger.info(f"{cal.name}: found {len(evs)} events")
 
     # Build chain map and identify unsynced events
@@ -437,23 +494,28 @@ def run_sync(ctx: SyncContext) -> None:
                 chain_id = priv['trisync_chain_id']
                 chain_map.setdefault(chain_id, []).append((cal.name, ev))
             else:
-                if not should_skip_event(ev, ctx.config, ctx.known_prefixes):
+                if should_skip_event(ev, ctx.config, ctx.known_prefixes):
+                    metrics.record_skip(cal.name)
+                else:
                     unsynced.append((cal.name, ev))
 
     # Process unsynced events
-    process_unsynced_events(ctx, unsynced, chain_map)
+    process_unsynced_events(ctx, unsynced, chain_map, metrics=metrics)
 
     # Process existing chains
-    process_chains(ctx, chain_map)
+    process_chains(ctx, chain_map, metrics=metrics)
 
+    metrics.stop()
     logger.info("Sync completed.")
+    return metrics
 
 
 def run_sync_incremental(
     ctx: SyncContext,
     storage: Optional[StateStorage] = None,
-    force_full: bool = False
-) -> None:
+    force_full: bool = False,
+    metrics: Optional[MetricsCollector] = None
+) -> Optional[MetricsCollector]:
     """
     Run incremental synchronization using sync tokens.
 
@@ -464,10 +526,18 @@ def run_sync_incremental(
         ctx: Sync context with calendars initialized
         storage: State storage for sync tokens (creates default if None)
         force_full: Force a full sync even if tokens are available
+        metrics: Optional metrics collector (created automatically if None)
+
+    Returns:
+        MetricsCollector with sync results, or None if metrics not requested
     """
     if storage is None:
         storage = StateStorage()
 
+    if metrics is None:
+        metrics = MetricsCollector(dry_run=ctx.dry_run, incremental=True)
+
+    metrics.start()
     time_min, time_max = get_time_window(ctx.config)
 
     # Fetch events from each calendar (incremental if possible)
@@ -477,6 +547,7 @@ def run_sync_incremental(
     for cal in ctx.get_all_calendars():
         sync_token = None if force_full else storage.get_sync_token(cal.name)
 
+        metrics.start_fetch(cal.name)
         result = sync_events(
             cal.service,
             cal.calendar_id,
@@ -489,6 +560,7 @@ def run_sync_incremental(
         cal_events[cal.name] = result.events
 
         sync_type = "full" if result.is_full_sync else "incremental"
+        metrics.record_fetch(cal.name, len(result.events), sync_type=sync_type)
         logger.info(
             f"{cal.name}: {sync_type} sync - "
             f"{len(result.events)} events, "
@@ -522,16 +594,20 @@ def run_sync_incremental(
                 chain_id = priv['trisync_chain_id']
                 chain_map.setdefault(chain_id, []).append((cal.name, ev))
             else:
-                if not should_skip_event(ev, ctx.config, ctx.known_prefixes):
+                if should_skip_event(ev, ctx.config, ctx.known_prefixes):
+                    metrics.record_skip(cal.name)
+                else:
                     unsynced.append((cal.name, ev))
 
     # Process unsynced events
-    process_unsynced_events(ctx, unsynced, chain_map)
+    process_unsynced_events(ctx, unsynced, chain_map, metrics=metrics)
 
     # Process existing chains
-    process_chains(ctx, chain_map)
+    process_chains(ctx, chain_map, metrics=metrics)
 
+    metrics.stop()
     logger.info("Incremental sync completed.")
+    return metrics
 
 
 def _handle_deleted_events(

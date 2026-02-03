@@ -78,6 +78,11 @@ from .retry import (
     robust_api_call,
     with_retry,
 )
+from .metrics import (
+    CalendarMetrics,
+    MetricsCollector,
+    SyncMetrics,
+)
 from .cli import main
 
 __all__ = [
@@ -144,6 +149,11 @@ __all__ = [
     'rate_limited',
     'robust_api_call',
     'with_retry',
+
+    # Metrics
+    'CalendarMetrics',
+    'MetricsCollector',
+    'SyncMetrics',
 
     # CLI
     'main',

@@ -12,6 +12,7 @@ import sys
 
 from .api import ensure_dirs, get_service
 from .config import ConfigValidationError, load_config
+from .metrics import MetricsCollector
 from .models import Calendar, SyncContext
 from .storage import StateStorage
 from .sync import run_sync, run_sync_incremental
@@ -110,6 +111,20 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         action='store_true',
         dest='clear_state',
         help='Clear saved state and exit'
+    )
+
+    # Metrics options
+    parser.add_argument(
+        '--metrics',
+        action='store_true',
+        help='Show sync metrics report after completion'
+    )
+    parser.add_argument(
+        '--metrics-json',
+        dest='metrics_json',
+        metavar='FILE',
+        default=None,
+        help='Save metrics to JSON file'
     )
 
     return parser.parse_args(args)
@@ -214,19 +229,33 @@ def main(args: list[str] | None = None) -> int:
         ctx.add_calendar(cal)
 
     # Run sync
+    mc = MetricsCollector(
+        dry_run=parsed.dry_run,
+        incremental=parsed.incremental
+    )
+
     try:
         if parsed.incremental:
             storage = StateStorage(parsed.state_file)
-            run_sync_incremental(
+            mc = run_sync_incremental(
                 ctx,
                 storage=storage,
-                force_full=parsed.force_full
+                force_full=parsed.force_full,
+                metrics=mc
             )
         else:
-            run_sync(ctx)
+            mc = run_sync(ctx, metrics=mc)
     except Exception as e:
         logger.error(f"Sync failed: {e}")
         return 1
+
+    # Display metrics report
+    if parsed.metrics and mc:
+        print(mc.report())
+
+    # Save metrics to JSON
+    if parsed.metrics_json and mc:
+        mc.save_json(parsed.metrics_json)
 
     logger.info("Done.")
     return 0
