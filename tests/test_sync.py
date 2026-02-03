@@ -7,12 +7,13 @@ from dataclasses import dataclass
 import sys
 sys.path.insert(0, '.')
 
+# Import from trisync_core (no Google API dependencies)
 from trisync_core import (
-    should_skip_event,
-    desired_copy_visibility,
     Calendar,
     SyncContext,
     VALID_VISIBILITIES,
+    should_skip_event,
+    desired_copy_visibility,
 )
 
 

@@ -11,6 +11,7 @@ import yaml
 import sys
 sys.path.insert(0, '.')
 
+# Import from trisync_core (no Google API dependencies)
 from trisync_core import (
     validate_config,
     ConfigValidationError,

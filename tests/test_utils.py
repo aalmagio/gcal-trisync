@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import sys
 sys.path.insert(0, '.')
 
+# Import from trisync_core (no Google API dependencies)
 from trisync_core import (
     iso,
     compute_chain_id,
