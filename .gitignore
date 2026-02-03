@@ -22,3 +22,16 @@ sync.log
 # macOS / Windows
 .DS_Store
 Thumbs.db
+
+# Testing / Coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Distribution
+dist/
+build/
+*.egg-info/
