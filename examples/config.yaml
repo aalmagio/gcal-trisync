@@ -1,0 +1,69 @@
+# gcal_trisync Configuration Example
+# ===================================
+
+# Time Window Settings
+# --------------------
+# How many days to look back from today
+window_days_past: 30
+
+# How many days to look ahead from today
+window_days_future: 365
+
+# Event Naming & Tagging
+# ----------------------
+# Add [CALENDAR_NAME] prefix to synced event titles
+prefix_origin_in_title: true
+
+# Note added to description of synced events
+sync_tag_in_description: "Sincronizzato da gcal_trisync"
+
+# Filtering Rules
+# ---------------
+# Skip events containing these keywords (case-insensitive)
+ignore_if_summary_contains:
+  - "compleanno"
+  # - "private"
+  # - "confidenziale"
+
+# Skip specific event types (e.g., 'fromGmail' for auto-created events)
+ignore_event_types: []
+  # - fromGmail
+
+# Skip events that already have a known calendar prefix (prevents loops)
+skip_if_title_has_known_prefix: true
+
+# Deletion & Visibility
+# ---------------------
+# Delete copies when the original event is deleted
+sync_delete: true
+
+# Default visibility for synced copies: default, private, public, confidential
+default_copy_visibility: private
+
+# Calendar Definitions
+# --------------------
+# Minimum 2 calendars required. Each calendar needs:
+# - name: Unique identifier (used in prefixes)
+# - calendar_id: Google Calendar ID ('primary' for main calendar)
+# - credentials_file: Path to OAuth client secrets JSON
+# - token_file: Path to store access token
+# - copy_visibility: (optional) Override default_copy_visibility for this calendar
+
+calendars:
+  - name: WORK
+    calendar_id: primary
+    credentials_file: creds/work_oauth_client.json
+    token_file: tokens/work.token.json
+    # copy_visibility: private  # optional per-calendar override
+
+  - name: PERS
+    calendar_id: primary
+    credentials_file: creds/personal_oauth_client.json
+    token_file: tokens/personal.token.json
+
+  # Uncomment to add a third calendar
+  # - name: ASSOC
+  #   calendar_id: your_calendar_id@group.calendar.google.com
+  #   credentials_file: creds/assoc_oauth_client.json
+  #   token_file: tokens/assoc.token.json
+  #   copy_visibility: public
