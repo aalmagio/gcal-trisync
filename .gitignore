@@ -14,6 +14,9 @@ __pycache__/
 *.log
 sync.log
 
+# State files (sync tokens)
+.trisync_state.json
+
 # IDE/editor
 .vscode/
 .idea/
@@ -22,3 +25,16 @@ sync.log
 # macOS / Windows
 .DS_Store
 Thumbs.db
+
+# Testing / Coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Distribution
+dist/
+build/
+*.egg-info/
