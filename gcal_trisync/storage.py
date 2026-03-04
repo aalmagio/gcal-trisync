@@ -207,8 +207,8 @@ class StateStorage:
             with open(temp_file, 'w', encoding='utf-8') as f:
                 json.dump(self._state.to_dict(), f, indent=2)
 
-            # Atomic rename
-            temp_file.rename(self.state_file)
+            # Atomic rename (replace works on both Unix and Windows)
+            temp_file.replace(self.state_file)
             logger.debug(f"Saved state to {self.state_file}")
 
         except OSError as e:
