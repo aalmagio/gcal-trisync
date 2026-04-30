@@ -14,6 +14,7 @@ from trisync_core import (
     VALID_VISIBILITIES,
     should_skip_event,
     desired_copy_visibility,
+    is_original_event,
 )
 
 
@@ -264,3 +265,43 @@ class TestCalendar:
         assert config['name'] == 'WORK'
         assert config['calendar_id'] == 'primary'
         assert config['copy_visibility'] == 'private'
+
+
+class TestIsOriginalEvent:
+    """Tests for is_original_event() — core logic for visibility protection."""
+
+    def _event_with_origin(self, origin):
+        return {
+            'extendedProperties': {
+                'private': {
+                    'trisync': '1',
+                    'trisync_chain_id': 'abc123',
+                    'trisync_origin': origin,
+                }
+            }
+        }
+
+    def test_original_detected_when_origin_matches_calendar(self):
+        """Event is original when trisync_origin matches the calendar name."""
+        event = self._event_with_origin('PAIDEIA')
+        assert is_original_event(event, 'PAIDEIA') is True
+
+    def test_copy_detected_when_origin_differs(self):
+        """Event is a copy when trisync_origin differs from the calendar name."""
+        event = self._event_with_origin('ALMA')
+        assert is_original_event(event, 'PAIDEIA') is False
+
+    def test_copy_detected_for_assif_origin(self):
+        """Event from assif on PAIDEIA is a copy."""
+        event = self._event_with_origin('ASSIF')
+        assert is_original_event(event, 'PAIDEIA') is False
+
+    def test_event_without_metadata_is_not_original(self):
+        """Event with no trisync metadata is not considered original."""
+        event = {'summary': 'Meeting'}
+        assert is_original_event(event, 'PAIDEIA') is False
+
+    def test_original_on_alma_calendar(self):
+        """Event created on ALMA is original on ALMA."""
+        event = self._event_with_origin('ALMA')
+        assert is_original_event(event, 'ALMA') is True

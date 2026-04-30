@@ -32,6 +32,7 @@ from .utils import (
     compute_chain_id,
     get_private_meta,
     get_time_window,
+    is_original_event,
     set_private_meta,
     title_with_origin,
 )
@@ -210,11 +211,12 @@ def update_if_diff(
         ctx.config.get('sync_tag_in_description', '')
     )
 
-    # Check visibility
-    target_vis = desired_copy_visibility(cal, ctx.config)
-    if existing.get('visibility') != target_vis:
-        desired['visibility'] = target_vis
-        changed = True
+    # Check visibility — only update copies, not original events
+    if not is_original_event(existing, cal.name):
+        target_vis = desired_copy_visibility(cal, ctx.config)
+        if existing.get('visibility') != target_vis:
+            desired['visibility'] = target_vis
+            changed = True
 
     if not changed:
         return existing, False
