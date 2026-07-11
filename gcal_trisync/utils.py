@@ -96,6 +96,11 @@ def set_private_meta(event: dict[str, Any], metadata: dict[str, str]) -> None:
     event['extendedProperties'] = ep
 
 
+def is_original_event(event: dict[str, Any], cal_name: str) -> bool:
+    """Return True if event is the original (not a synced copy) on the given calendar."""
+    return get_private_meta(event).get('trisync_origin') == cal_name
+
+
 def title_with_origin(prefix_enabled: bool, origin_name: str, title: str) -> str:
     """
     Add origin prefix to event title if enabled.

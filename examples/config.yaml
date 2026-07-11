@@ -38,6 +38,8 @@ skip_if_title_has_known_prefix: true
 sync_delete: true
 
 # Default visibility for synced copies: default, private, public, confidential
+# This applies ONLY to copies created on target calendars — original events
+# are never modified by the sync and keep whatever visibility the user set.
 default_copy_visibility: private
 
 # Calendar Definitions
