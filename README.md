@@ -28,11 +28,42 @@ Sincronizza **bidirezionalmente** due o tre Google Calendar, mantenendo tutto in
 
 Questa sezione e pensata per chi vuole usare l'app senza riga di comando.
 
-### 1. Installa o avvia l'app
+### 1. Scarica l'app
 
-Se hai l'installer, avvia `gcal-trisync-setup-0.3.0.exe` e segui la procedura guidata.
+Vai alla pagina **Releases** del progetto:
 
-Se hai solo l'eseguibile, apri:
+```text
+https://github.com/aalmagio/gcal-trisync/releases
+```
+
+Apri l'ultima release disponibile e, nella sezione **Assets**, scarica uno di questi file:
+
+- `gcal-trisync-setup-0.3.0.exe`: installer consigliato
+- `gcal-trisync.exe`: eseguibile singolo, utile per prova veloce o uso portabile
+
+Non usare il pulsante verde **Code > Download ZIP** se vuoi solo installare il programma: quello scarica il codice sorgente per sviluppatori, non l'app pronta.
+
+Se nella pagina Releases non vedi ancora `gcal-trisync-setup-0.3.0.exe`, significa che l'installer non e stato pubblicato per quella versione. In quel caso serve prima creare una release GitHub caricando il file generato in `dist/installer/`.
+
+### 2. Installa o avvia l'app
+
+Se hai scaricato l'installer, apri:
+
+```text
+gcal-trisync-setup-0.3.0.exe
+```
+
+e segui la procedura guidata.
+
+Se Windows SmartScreen mostra un avviso per app non riconosciuta, scegli **Ulteriori informazioni** e poi **Esegui comunque** solo se hai scaricato il file dal repository ufficiale.
+
+Se hai scaricato l'eseguibile singolo, mettilo in una cartella stabile, per esempio:
+
+```text
+C:\Users\TUO_NOME\AppData\Local\Programs\gcal-trisync
+```
+
+poi apri:
 
 ```text
 gcal-trisync.exe
@@ -46,7 +77,7 @@ Al primo avvio l'app crea automaticamente questa cartella dati:
 
 Qui vengono salvati configurazione, credenziali, token OAuth e stato della sincronizzazione. I dati restano sul tuo PC.
 
-### 2. Prepara le credenziali Google
+### 3. Prepara le credenziali Google
 
 Per ogni account Google Calendar da sincronizzare serve un file credenziali OAuth:
 
@@ -70,7 +101,7 @@ Esempio:
 %LOCALAPPDATA%\gcal-trisync\tokens\work.token.json
 ```
 
-### 3. Configura i calendari
+### 4. Configura i calendari
 
 Nella tab `Calendari` configura almeno due calendari:
 
@@ -82,7 +113,7 @@ Nella tab `Calendari` configura almeno due calendari:
 
 Premi `Salva` in alto dopo le modifiche.
 
-### 4. Imposta opzioni e parole ignorate
+### 5. Imposta opzioni e parole ignorate
 
 Nella tab `Opzioni` puoi scegliere:
 
@@ -94,7 +125,7 @@ Nella tab `Opzioni` puoi scegliere:
 
 Nella tab `Parole ignorate` aggiungi parole come `compleanno`, `ferie` o altre etichette da escludere. Gli eventi che contengono queste parole nel titolo vengono saltati.
 
-### 5. Prima prova consigliata
+### 6. Prima prova consigliata
 
 Nella tab `Esecuzione` lascia attivo `Dry run` e premi `Avvia sync`.
 
@@ -102,7 +133,7 @@ La prima volta si apre il browser per autorizzare ogni account Google. Dopo il l
 
 Se il dry-run e corretto, togli `Dry run` e premi di nuovo `Avvia sync`.
 
-### 6. Sync automatico
+### 7. Sync automatico
 
 Nella tab `Scheduler` puoi installare una sincronizzazione automatica con Windows Task Scheduler:
 
