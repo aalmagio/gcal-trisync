@@ -24,6 +24,115 @@ Sincronizza **bidirezionalmente** due o tre Google Calendar, mantenendo tutto in
 - Google Calendar API abilitata su [Google Cloud Console](https://console.cloud.google.com/)
 - Credenziali OAuth **"Desktop app"** (una per ogni account da sincronizzare)
 
+## Guida rapida Windows
+
+Questa sezione e pensata per chi vuole usare l'app senza riga di comando.
+
+### 1. Installa o avvia l'app
+
+Se hai l'installer, avvia `gcal-trisync-setup-0.3.0.exe` e segui la procedura guidata.
+
+Se hai solo l'eseguibile, apri:
+
+```text
+gcal-trisync.exe
+```
+
+Al primo avvio l'app crea automaticamente questa cartella dati:
+
+```text
+%LOCALAPPDATA%\gcal-trisync
+```
+
+Qui vengono salvati configurazione, credenziali, token OAuth e stato della sincronizzazione. I dati restano sul tuo PC.
+
+### 2. Prepara le credenziali Google
+
+Per ogni account Google Calendar da sincronizzare serve un file credenziali OAuth:
+
+1. Apri [Google Cloud Console](https://console.cloud.google.com/)
+2. Crea o seleziona un progetto
+3. Abilita **Google Calendar API**
+4. Vai in **API & Services** > **Credentials**
+5. Crea un **OAuth Client ID** di tipo **Desktop app**
+6. Scarica il file `.json`
+7. Nella GUI, tab `Calendari`, usa `Aggiungi` o `Modifica` e seleziona quel file nel campo `Credenziali JSON`
+
+Per il campo `Token locale` scegli un percorso dentro:
+
+```text
+%LOCALAPPDATA%\gcal-trisync\tokens
+```
+
+Esempio:
+
+```text
+%LOCALAPPDATA%\gcal-trisync\tokens\work.token.json
+```
+
+### 3. Configura i calendari
+
+Nella tab `Calendari` configura almeno due calendari:
+
+- `Nome`: etichetta breve, per esempio `WORK`, `PERS`, `ASSOC`
+- `Calendar ID`: usa `primary` per il calendario principale dell'account
+- `Credenziali JSON`: il file OAuth scaricato da Google
+- `Token locale`: dove salvare il token generato al primo login
+- `Visibilita copie`: opzionale; lascia vuoto per usare la visibilita generale
+
+Premi `Salva` in alto dopo le modifiche.
+
+### 4. Imposta opzioni e parole ignorate
+
+Nella tab `Opzioni` puoi scegliere:
+
+- quanti giorni nel passato e nel futuro sincronizzare
+- se aggiungere il prefisso del calendario al titolo
+- se eliminare le copie quando sparisce l'evento originale
+- la visibilita predefinita delle copie
+- eventuali tipi evento da ignorare, per esempio `fromGmail`
+
+Nella tab `Parole ignorate` aggiungi parole come `compleanno`, `ferie` o altre etichette da escludere. Gli eventi che contengono queste parole nel titolo vengono saltati.
+
+### 5. Prima prova consigliata
+
+Nella tab `Esecuzione` lascia attivo `Dry run` e premi `Avvia sync`.
+
+La prima volta si apre il browser per autorizzare ogni account Google. Dopo il login, il token viene salvato localmente e i run successivi non richiedono di accedere di nuovo.
+
+Se il dry-run e corretto, togli `Dry run` e premi di nuovo `Avvia sync`.
+
+### 6. Sync automatico
+
+Nella tab `Scheduler` puoi installare una sincronizzazione automatica con Windows Task Scheduler:
+
+1. Scegli ogni quanti minuti eseguire il sync
+2. Premi `Installa/aggiorna`
+3. Usa `Verifica` per controllare che il task sia presente
+
+Lo scheduler non richiede che la GUI resti aperta: Windows esegue il sync in background usando la configurazione salvata.
+
+Per disattivarlo, torna nella tab `Scheduler` e premi `Rimuovi`.
+
+### Dove sono i file importanti
+
+```text
+%LOCALAPPDATA%\gcal-trisync\config.yaml
+%LOCALAPPDATA%\gcal-trisync\creds\
+%LOCALAPPDATA%\gcal-trisync\tokens\
+%LOCALAPPDATA%\gcal-trisync\.trisync_state.json
+```
+
+Non condividere mai i file dentro `creds` e `tokens`.
+
+### Problemi comuni
+
+- Se un calendario non si autentica, usa `Controlla auth` nella tab `Esecuzione`
+- Se un token e scaduto o revocato, usa `Re-auth`
+- Se vuoi forzare una nuova sincronizzazione completa, usa `Forza sync completo`
+- Se vuoi vedere cosa succede senza modificare i calendari, usa `Dry run`
+- Se lo scheduler non parte, apri la tab `Scheduler`, premi `Verifica` e controlla il log nella tab `Esecuzione`
+
 ## Installazione
 
 ```bash
@@ -338,7 +447,7 @@ python -m pytest -v
 python -m pytest tests/test_sync.py
 ```
 
-Suite di test: **217 test** su 7 file, copertura dei moduli core senza dipendenze esterne Google.
+Suite di test: **222 test** su 7 file, copertura dei moduli core senza dipendenze esterne Google.
 
 ## Struttura file
 
