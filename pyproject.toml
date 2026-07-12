@@ -16,10 +16,6 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 
-[project.scripts]
-gcal-trisync = "gcal_trisync.cli:main"
-gcal-trisync-gui = "gcal_trisync.gui:main"
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]

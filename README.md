@@ -24,145 +24,13 @@ Sincronizza **bidirezionalmente** due o tre Google Calendar, mantenendo tutto in
 - Google Calendar API abilitata su [Google Cloud Console](https://console.cloud.google.com/)
 - Credenziali OAuth **"Desktop app"** (una per ogni account da sincronizzare)
 
-## Guida rapida Windows
+## App Windows
 
-Questa sezione e pensata per chi vuole usare l'app senza riga di comando.
+Questo repository contiene il progetto Python/CLI, adatto anche a uso Linux con cron.
 
-### 1. Scarica l'app
+Per la versione Windows con interfaccia grafica, installer `.exe` e scheduler integrato, usa il repository dedicato:
 
-Vai alla pagina **Releases** del progetto:
-
-```text
-https://github.com/aalmagio/gcal-trisync/releases
-```
-
-Apri l'ultima release disponibile e, nella sezione **Assets**, scarica uno di questi file:
-
-- `gcal-trisync-setup-0.3.0.exe`: installer consigliato
-- `gcal-trisync.exe`: eseguibile singolo, utile per prova veloce o uso portabile
-
-Non usare il pulsante verde **Code > Download ZIP** se vuoi solo installare il programma: quello scarica il codice sorgente per sviluppatori, non l'app pronta.
-
-Se nella pagina Releases non vedi ancora `gcal-trisync-setup-0.3.0.exe`, significa che l'installer non e stato pubblicato per quella versione. In quel caso serve prima creare una release GitHub caricando il file generato in `dist/installer/`.
-
-### 2. Installa o avvia l'app
-
-Se hai scaricato l'installer, apri:
-
-```text
-gcal-trisync-setup-0.3.0.exe
-```
-
-e segui la procedura guidata.
-
-Se Windows SmartScreen mostra un avviso per app non riconosciuta, scegli **Ulteriori informazioni** e poi **Esegui comunque** solo se hai scaricato il file dal repository ufficiale.
-
-Se hai scaricato l'eseguibile singolo, mettilo in una cartella stabile, per esempio:
-
-```text
-C:\Users\TUO_NOME\AppData\Local\Programs\gcal-trisync
-```
-
-poi apri:
-
-```text
-gcal-trisync.exe
-```
-
-Al primo avvio l'app crea automaticamente questa cartella dati:
-
-```text
-%LOCALAPPDATA%\gcal-trisync
-```
-
-Qui vengono salvati configurazione, credenziali, token OAuth e stato della sincronizzazione. I dati restano sul tuo PC.
-
-### 3. Prepara le credenziali Google
-
-Per ogni account Google Calendar da sincronizzare serve un file credenziali OAuth:
-
-1. Apri [Google Cloud Console](https://console.cloud.google.com/)
-2. Crea o seleziona un progetto
-3. Abilita **Google Calendar API**
-4. Vai in **API & Services** > **Credentials**
-5. Crea un **OAuth Client ID** di tipo **Desktop app**
-6. Scarica il file `.json`
-7. Nella GUI, tab `Calendari`, usa `Aggiungi` o `Modifica` e seleziona quel file nel campo `Credenziali JSON`
-
-Per il campo `Token locale` scegli un percorso dentro:
-
-```text
-%LOCALAPPDATA%\gcal-trisync\tokens
-```
-
-Esempio:
-
-```text
-%LOCALAPPDATA%\gcal-trisync\tokens\work.token.json
-```
-
-### 4. Configura i calendari
-
-Nella tab `Calendari` configura almeno due calendari:
-
-- `Nome`: etichetta breve, per esempio `WORK`, `PERS`, `ASSOC`
-- `Calendar ID`: usa `primary` per il calendario principale dell'account
-- `Credenziali JSON`: il file OAuth scaricato da Google
-- `Token locale`: dove salvare il token generato al primo login
-- `Visibilita copie`: opzionale; lascia vuoto per usare la visibilita generale
-
-Premi `Salva` in alto dopo le modifiche.
-
-### 5. Imposta opzioni e parole ignorate
-
-Nella tab `Opzioni` puoi scegliere:
-
-- quanti giorni nel passato e nel futuro sincronizzare
-- se aggiungere il prefisso del calendario al titolo
-- se eliminare le copie quando sparisce l'evento originale
-- la visibilita predefinita delle copie
-- eventuali tipi evento da ignorare, per esempio `fromGmail`
-
-Nella tab `Parole ignorate` aggiungi parole come `compleanno`, `ferie` o altre etichette da escludere. Gli eventi che contengono queste parole nel titolo vengono saltati.
-
-### 6. Prima prova consigliata
-
-Nella tab `Esecuzione` lascia attivo `Dry run` e premi `Avvia sync`.
-
-La prima volta si apre il browser per autorizzare ogni account Google. Dopo il login, il token viene salvato localmente e i run successivi non richiedono di accedere di nuovo.
-
-Se il dry-run e corretto, togli `Dry run` e premi di nuovo `Avvia sync`.
-
-### 7. Sync automatico
-
-Nella tab `Scheduler` puoi installare una sincronizzazione automatica con Windows Task Scheduler:
-
-1. Scegli ogni quanti minuti eseguire il sync
-2. Premi `Installa/aggiorna`
-3. Usa `Verifica` per controllare che il task sia presente
-
-Lo scheduler non richiede che la GUI resti aperta: Windows esegue il sync in background usando la configurazione salvata.
-
-Per disattivarlo, torna nella tab `Scheduler` e premi `Rimuovi`.
-
-### Dove sono i file importanti
-
-```text
-%LOCALAPPDATA%\gcal-trisync\config.yaml
-%LOCALAPPDATA%\gcal-trisync\creds\
-%LOCALAPPDATA%\gcal-trisync\tokens\
-%LOCALAPPDATA%\gcal-trisync\.trisync_state.json
-```
-
-Non condividere mai i file dentro `creds` e `tokens`.
-
-### Problemi comuni
-
-- Se un calendario non si autentica, usa `Controlla auth` nella tab `Esecuzione`
-- Se un token e scaduto o revocato, usa `Re-auth`
-- Se vuoi forzare una nuova sincronizzazione completa, usa `Forza sync completo`
-- Se vuoi vedere cosa succede senza modificare i calendari, usa `Dry run`
-- Se lo scheduler non parte, apri la tab `Scheduler`, premi `Verifica` e controlla il log nella tab `Esecuzione`
+[https://github.com/aalmagio/gcal-trisync-windows](https://github.com/aalmagio/gcal-trisync-windows)
 
 ## Installazione
 
@@ -254,59 +122,6 @@ python -m gcal_trisync --config config.yaml --auth console
 ```
 
 ## Utilizzo
-
-### Interfaccia grafica Windows
-
-Puoi avviare una GUI semplice per configurare i calendari e lanciare sync, dry-run, controllo autenticazione e reset dello stato:
-
-```bash
-python -m gcal_trisync.gui
-```
-
-Se il pacchetto e installato come script:
-
-```bash
-gcal-trisync-gui
-```
-
-La finestra salva `config.yaml`, usa la stessa logica della CLI e mostra il log del comando in tempo reale. Il primo avvio OAuth apre il browser come nella versione a riga di comando.
-
-La GUI e organizzata in tab:
-
-- `Calendari`: aggiunta, modifica e rimozione dei calendari da sincronizzare
-- `Opzioni`: finestra temporale, visibilita, prefisso origine, cancellazione sicura e tipi evento da ignorare
-- `Parole ignorate`: elenco modificabile delle parole chiave da saltare
-- `Esecuzione`: sync manuale, dry-run, auth, reset stato e log
-- `Scheduler`: installa o rimuove un'attivita di Windows Task Scheduler per eseguire il sync a intervalli regolari
-
-Lo scheduler usa Windows Task Scheduler invece di un timer interno: il sync continua a partire anche se la GUI e chiusa.
-
-### Creare l'eseguibile Windows
-
-Per generare un singolo `.exe` della GUI:
-
-```bash
-python -m pip install -r requirements-dev.txt
-python -m PyInstaller gcal_trisync_gui.spec
-```
-
-L'eseguibile viene creato in `dist/gcal-trisync.exe`.
-
-### Creare l'installer Windows
-
-L'installer usa Inno Setup e installa l'app per l'utente corrente, senza richiedere privilegi admin:
-
-```powershell
-.\scripts\build_installer.ps1
-```
-
-Se `ISCC.exe` non e nel `PATH`, passa il percorso esplicito:
-
-```powershell
-.\scripts\build_installer.ps1 -IsccPath "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-```
-
-Il setup viene creato in `dist/installer/`.
 
 ### Sync completo (legacy)
 
@@ -478,7 +293,7 @@ python -m pytest -v
 python -m pytest tests/test_sync.py
 ```
 
-Suite di test: **222 test** su 7 file, copertura dei moduli core senza dipendenze esterne Google.
+Suite di test: **217 test** su 7 file, copertura dei moduli core senza dipendenze esterne Google.
 
 ## Struttura file
 
