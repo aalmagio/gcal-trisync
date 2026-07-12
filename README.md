@@ -115,6 +115,59 @@ python -m gcal_trisync --config config.yaml --auth console
 
 ## Utilizzo
 
+### Interfaccia grafica Windows
+
+Puoi avviare una GUI semplice per configurare i calendari e lanciare sync, dry-run, controllo autenticazione e reset dello stato:
+
+```bash
+python -m gcal_trisync.gui
+```
+
+Se il pacchetto e installato come script:
+
+```bash
+gcal-trisync-gui
+```
+
+La finestra salva `config.yaml`, usa la stessa logica della CLI e mostra il log del comando in tempo reale. Il primo avvio OAuth apre il browser come nella versione a riga di comando.
+
+La GUI e organizzata in tab:
+
+- `Calendari`: aggiunta, modifica e rimozione dei calendari da sincronizzare
+- `Opzioni`: finestra temporale, visibilita, prefisso origine, cancellazione sicura e tipi evento da ignorare
+- `Parole ignorate`: elenco modificabile delle parole chiave da saltare
+- `Esecuzione`: sync manuale, dry-run, auth, reset stato e log
+- `Scheduler`: installa o rimuove un'attivita di Windows Task Scheduler per eseguire il sync a intervalli regolari
+
+Lo scheduler usa Windows Task Scheduler invece di un timer interno: il sync continua a partire anche se la GUI e chiusa.
+
+### Creare l'eseguibile Windows
+
+Per generare un singolo `.exe` della GUI:
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m PyInstaller gcal_trisync_gui.spec
+```
+
+L'eseguibile viene creato in `dist/gcal-trisync.exe`.
+
+### Creare l'installer Windows
+
+L'installer usa Inno Setup e installa l'app per l'utente corrente, senza richiedere privilegi admin:
+
+```powershell
+.\scripts\build_installer.ps1
+```
+
+Se `ISCC.exe` non e nel `PATH`, passa il percorso esplicito:
+
+```powershell
+.\scripts\build_installer.ps1 -IsccPath "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+```
+
+Il setup viene creato in `dist/installer/`.
+
 ### Sync completo (legacy)
 
 ```bash
