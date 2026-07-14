@@ -252,3 +252,61 @@ class TestStateStorage:
         temp_path = Path(temp_state_file).with_suffix('.tmp')
         assert not temp_path.exists()
         assert Path(temp_state_file).exists()
+
+
+SyncLock = _storage.SyncLock
+
+
+class TestSyncLock:
+    """Tests for the SyncLock cross-process lock."""
+
+    def test_acquire_and_release(self, tmp_path):
+        """Lock can be acquired, released, and re-acquired."""
+        lock = SyncLock(tmp_path / 'test.lock')
+        assert lock.acquire() is True
+        lock.release()
+        assert lock.acquire() is True
+        lock.release()
+
+    def test_acquire_is_idempotent_for_holder(self):
+        """A holder re-acquiring its own lock succeeds."""
+        with tempfile.TemporaryDirectory() as d:
+            lock = SyncLock(Path(d) / 'test.lock')
+            assert lock.acquire() is True
+            assert lock.acquire() is True
+            lock.release()
+
+    def test_second_instance_cannot_acquire(self, tmp_path):
+        """A second lock on the same file must fail while held."""
+        first = SyncLock(tmp_path / 'test.lock')
+        second = SyncLock(tmp_path / 'test.lock')
+
+        assert first.acquire() is True
+        assert second.acquire() is False
+
+        first.release()
+        assert second.acquire() is True
+        second.release()
+
+    def test_release_without_acquire_is_noop(self, tmp_path):
+        """Releasing a never-acquired lock must not raise."""
+        lock = SyncLock(tmp_path / 'test.lock')
+        lock.release()
+
+    def test_lock_file_records_pid(self, tmp_path):
+        """The lock file contains the holder's PID for diagnostics."""
+        lock_file = tmp_path / 'test.lock'
+        lock = SyncLock(lock_file)
+        assert lock.acquire() is True
+
+        assert lock_file.read_text() == str(os.getpid())
+        lock.release()
+
+    def test_different_files_do_not_conflict(self, tmp_path):
+        """Locks on different files are independent."""
+        a = SyncLock(tmp_path / 'a.lock')
+        b = SyncLock(tmp_path / 'b.lock')
+        assert a.acquire() is True
+        assert b.acquire() is True
+        a.release()
+        b.release()

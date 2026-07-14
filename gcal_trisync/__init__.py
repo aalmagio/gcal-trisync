@@ -68,6 +68,7 @@ from .api import (
 from .storage import (
     CalendarState,
     StateStorage,
+    SyncLock,
     SyncState,
 )
 from .retry import (
@@ -150,6 +151,7 @@ __all__ = [
     # Storage
     'CalendarState',
     'StateStorage',
+    'SyncLock',
     'SyncState',
 
     # Retry & Rate Limiting

@@ -6,15 +6,20 @@ These tests exercise gcal_trisync.sync with mocked API calls.
 import sys
 from unittest.mock import Mock, patch
 
+import pytest
+
 sys.path.insert(0, '.')
 
 from gcal_trisync import sync as sync_mod
+from gcal_trisync.api import SyncResult
 from gcal_trisync.models import Calendar, SyncContext
 from gcal_trisync.sync import (
+    _handle_deleted_events,
     _is_self_copy,
     create_copy_with_visibility,
     process_chains,
     remove_self_copies,
+    run_sync_incremental,
     update_if_diff,
 )
 from gcal_trisync.utils import compute_chain_id, strip_sync_note
@@ -365,3 +370,122 @@ class TestStripSyncNote:
     def test_empty_inputs(self):
         assert strip_sync_note(None, None) == ''
         assert strip_sync_note('Agenda', '') == 'Agenda'
+
+
+class TestIncrementalDelete:
+    """sync_delete must work in incremental mode via deterministic chain IDs."""
+
+    def test_deletes_copies_when_origin_deleted(self):
+        """Deleting an origin event must delete its copies elsewhere."""
+        ctx = make_ctx(config={'sync_delete': True})
+        cal = ctx.get_calendar('ALMA')
+        chain_id = compute_chain_id('ALMA', 'orig1')
+        copy_work = make_copy('copyW', chain_id, 'ALMA', '[ALMA] Riunione')
+
+        def found(service, cal_id, chain):
+            if cal_id == 'work@example.com' and chain == chain_id:
+                return copy_work
+            return None
+
+        with patch.object(sync_mod, 'find_event_by_chain', side_effect=found), \
+             patch.object(sync_mod, 'delete_event') as mock_delete:
+            _handle_deleted_events(ctx, cal, ['orig1'])
+
+        mock_delete.assert_called_once()
+        assert mock_delete.call_args[0][2] == 'copyW'
+
+    def test_noop_when_sync_delete_disabled(self):
+        """Without sync_delete nothing must be touched."""
+        ctx = make_ctx(config={'sync_delete': False})
+        cal = ctx.get_calendar('ALMA')
+
+        with patch.object(sync_mod, 'find_event_by_chain') as mock_find, \
+             patch.object(sync_mod, 'delete_event') as mock_delete:
+            _handle_deleted_events(ctx, cal, ['orig1'])
+
+        mock_find.assert_not_called()
+        mock_delete.assert_not_called()
+
+    def test_deleted_copy_is_ignored(self):
+        """Deleting a copy (not an origin) must not cascade: the recomputed
+        chain ID matches nothing on the other calendars."""
+        ctx = make_ctx(config={'sync_delete': True})
+        cal = ctx.get_calendar('WORK')
+
+        with patch.object(sync_mod, 'find_event_by_chain', return_value=None), \
+             patch.object(sync_mod, 'delete_event') as mock_delete:
+            _handle_deleted_events(ctx, cal, ['copyW'])
+
+        mock_delete.assert_not_called()
+
+    def test_foreign_origin_not_deleted(self):
+        """An event whose metadata points to a different origin is left alone."""
+        ctx = make_ctx(config={'sync_delete': True})
+        cal = ctx.get_calendar('ALMA')
+        chain_id = compute_chain_id('ALMA', 'orig1')
+        stranger = make_copy('evX', chain_id, 'WORK', '[WORK] Altro')
+
+        with patch.object(sync_mod, 'find_event_by_chain', return_value=stranger), \
+             patch.object(sync_mod, 'delete_event') as mock_delete:
+            _handle_deleted_events(ctx, cal, ['orig1'])
+
+        mock_delete.assert_not_called()
+
+    def test_dry_run_does_not_delete(self):
+        """Dry-run must only log, never delete."""
+        ctx = make_ctx(config={'sync_delete': True}, dry_run=True)
+        cal = ctx.get_calendar('ALMA')
+        chain_id = compute_chain_id('ALMA', 'orig1')
+        copy_work = make_copy('copyW', chain_id, 'ALMA', '[ALMA] Riunione')
+
+        with patch.object(sync_mod, 'find_event_by_chain', return_value=copy_work), \
+             patch.object(sync_mod, 'delete_event') as mock_delete:
+            _handle_deleted_events(ctx, cal, ['orig1'])
+
+        mock_delete.assert_not_called()
+
+
+class TestSyncTokenPersistence:
+    """Sync tokens must be saved only after processing succeeded."""
+
+    def _result(self):
+        return SyncResult(
+            events=[], next_sync_token='tok1',
+            is_full_sync=True, deleted_event_ids=[]
+        )
+
+    def test_tokens_saved_after_successful_run(self):
+        ctx = make_ctx()
+        storage = Mock()
+        storage.get_sync_token.return_value = None
+
+        with patch.object(sync_mod, 'sync_events', return_value=self._result()):
+            run_sync_incremental(ctx, storage=storage)
+
+        assert storage.update_calendar.call_count == 2
+        saved_tokens = [c[0][1] for c in storage.update_calendar.call_args_list]
+        assert saved_tokens == ['tok1', 'tok1']
+
+    def test_tokens_not_saved_if_processing_crashes(self):
+        """A crash during chain processing must leave the old tokens in
+        place, so the next run re-fetches the unprocessed changes."""
+        ctx = make_ctx()
+        storage = Mock()
+        storage.get_sync_token.return_value = None
+
+        with patch.object(sync_mod, 'sync_events', return_value=self._result()), \
+             patch.object(sync_mod, 'process_chains', side_effect=RuntimeError('boom')):
+            with pytest.raises(RuntimeError):
+                run_sync_incremental(ctx, storage=storage)
+
+        storage.update_calendar.assert_not_called()
+
+    def test_dry_run_never_saves_tokens(self):
+        ctx = make_ctx(dry_run=True)
+        storage = Mock()
+        storage.get_sync_token.return_value = None
+
+        with patch.object(sync_mod, 'sync_events', return_value=self._result()):
+            run_sync_incremental(ctx, storage=storage)
+
+        storage.update_calendar.assert_not_called()

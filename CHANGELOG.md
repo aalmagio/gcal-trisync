@@ -23,6 +23,20 @@
 - Il tag `sync_tag_in_description` non viene più aggiunto/propagato alla
   descrizione degli eventi originali; resta solo sulle copie
 
+### Fix: `sync_delete` in modalità incrementale
+- La cancellazione delle copie ora funziona anche con `--incremental`: per gli
+  eventi origine il chain ID è deterministico, quindi le copie vengono trovate
+  e cancellate direttamente sugli altri calendari (prima `_handle_deleted_events`
+  era un no-op e le copie restavano per sempre)
+
+### Affidabilità
+- I sync token vengono salvati solo a fine run riuscito: un crash a metà sync
+  non fa più perdere definitivamente le modifiche scaricate ma non processate
+- Nuovo lock anti-sovrapposizione (`SyncLock`, flag `--lock-file`, default
+  `.trisync.lock`): due run concorrenti (es. cron ogni 5 minuti con un sync
+  lento in corso) non possono più creare copie duplicate; la seconda istanza
+  esce con un avviso
+
 ### Sicurezza
 - I file token OAuth vengono salvati con permessi `0600` (solo proprietario)
 

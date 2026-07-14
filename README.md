@@ -190,6 +190,7 @@ Lo stato dei token può essere: `valid`, `expiring_soon`, `expired`, `missing`, 
 | `--full-sync` | Forza sync completo (con `--incremental`) |
 | `--state-file FILE` | File di stato per i sync token (default: `.trisync_state.json`) |
 | `--clear-state` | Cancella lo stato salvato ed esci |
+| `--lock-file FILE` | File di lock contro esecuzioni sovrapposte (default: `.trisync.lock`) |
 | `--metrics` | Mostra report metriche dopo il sync |
 | `--metrics-json FILE` | Salva metriche in file JSON |
 | `--check-auth` | Verifica stato autenticazione ed esci |
@@ -208,6 +209,8 @@ Oppure con l'invocazione a modulo:
 ```cron
 */5 * * * * cd /path/to/gcal-trisync && /path/to/.venv/bin/python -m gcal_trisync --config config.yaml --incremental >> sync.log 2>&1
 ```
+
+Le esecuzioni sovrapposte sono gestite automaticamente: se un sync lento è ancora in corso quando parte il tick successivo, la nuova istanza rileva il lock (`.trisync.lock`), logga un avviso ed esce senza fare nulla. Il lock è a livello di sistema operativo e viene rilasciato automaticamente anche se il processo muore.
 
 ## Configurazione dettagliata
 

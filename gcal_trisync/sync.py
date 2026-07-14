@@ -720,20 +720,13 @@ def run_sync_incremental(
             f"{len(result.deleted_event_ids)} deleted"
         )
 
-        # Save the new sync token
-        if not ctx.dry_run:
-            storage.update_calendar(
-                cal.name,
-                result.next_sync_token,
-                len(result.events),
-                result.is_full_sync
-            )
-
     # Handle deleted events from incremental sync
     for cal in ctx.get_all_calendars():
         result = cal_results[cal.name]
         if not result.is_full_sync and result.deleted_event_ids:
-            _handle_deleted_events(ctx, cal, result.deleted_event_ids)
+            _handle_deleted_events(
+                ctx, cal, result.deleted_event_ids, metrics=metrics
+            )
 
     # Build chain map and identify unsynced events
     chain_map: dict[str, list[tuple[str, dict[str, Any]]]] = {}
@@ -758,6 +751,19 @@ def run_sync_incremental(
     # Process existing chains
     process_chains(ctx, chain_map, metrics=metrics)
 
+    # Persist sync tokens only after processing completed: saving them
+    # before would permanently skip the fetched-but-unprocessed changes
+    # if the run crashes mid-way
+    if not ctx.dry_run:
+        for cal in ctx.get_all_calendars():
+            result = cal_results[cal.name]
+            storage.update_calendar(
+                cal.name,
+                result.next_sync_token,
+                len(result.events),
+                result.is_full_sync
+            )
+
     metrics.stop()
     logger.info("Incremental sync completed.")
     return metrics
@@ -766,45 +772,72 @@ def run_sync_incremental(
 def _handle_deleted_events(
     ctx: SyncContext,
     cal: Calendar,
-    deleted_ids: list[str]
+    deleted_ids: list[str],
+    metrics: Optional[MetricsCollector] = None
 ) -> None:
     """
     Handle events deleted from a calendar during incremental sync.
 
-    If a deleted event was the origin, delete copies in other calendars.
-    If it was a copy, ignore (origin still exists).
+    For origin events the chain ID is deterministic
+    (sha256(calendar_name:event_id)), so copies can be located on the
+    other calendars directly and deleted — no local index required.
+    If the deleted event was a copy, the recomputed chain ID matches
+    nothing here and the copy is recreated by regular chain processing.
 
     Args:
         ctx: Sync context
         cal: Calendar where events were deleted
         deleted_ids: IDs of deleted events
+        metrics: Optional metrics collector
     """
     if not ctx.config.get('sync_delete', False):
         return
 
     for event_id in deleted_ids:
-        # Try to find copies in other calendars
-        chain_id = None
+        chain_id = compute_chain_id(cal.name, event_id)
 
-        # We need to find if this was an origin or a copy
-        # Check other calendars for events with this chain
         for other_cal in ctx.get_all_calendars():
             if other_cal.name == cal.name:
                 continue
 
-            # Look for any event that references this as origin
-            # This is expensive but necessary for proper sync delete
             try:
-                # We'd need the chain_id to properly handle this
-                # For now, log a warning
-                pass
-            except HttpError:
-                pass
+                found = find_event_by_chain(
+                    other_cal.service, other_cal.calendar_id, chain_id
+                )
+            except HttpError as e:
+                logger.error(f"Chain lookup failed on {other_cal.name}: {e}")
+                if metrics:
+                    metrics.record_error(other_cal.name)
+                continue
 
-        # Note: Full chain resolution would require maintaining
-        # a local index. For now, rely on the regular chain processing
-        # which handles this case during full sync.
-        logger.debug(
-            f"Event {event_id} deleted from {cal.name}, "
-            "chain cleanup handled in next sync cycle"
-        )
+            if not found:
+                continue
+
+            # Only delete events this tool created as copies of the
+            # deleted origin
+            priv = get_private_meta(found)
+            if priv.get('trisync') != '1' or priv.get('trisync_origin') != cal.name:
+                continue
+
+            if ctx.dry_run:
+                logger.info(
+                    f"[DRY-RUN] Would delete in {other_cal.name} "
+                    f"(origin deleted on {cal.name}): "
+                    f"'{(found.get('summary') or '')[:40]}'"
+                )
+                if metrics:
+                    metrics.record_delete(other_cal.name)
+                continue
+
+            try:
+                delete_event(other_cal.service, other_cal.calendar_id, found['id'])
+                logger.info(
+                    f"[chain {chain_id[:8]}] Deleted in {other_cal.name} "
+                    f"(origin deleted on {cal.name})"
+                )
+                if metrics:
+                    metrics.record_delete(other_cal.name)
+            except HttpError as e:
+                logger.error(f"Delete failed on {other_cal.name}: {e}")
+                if metrics:
+                    metrics.record_error(other_cal.name)

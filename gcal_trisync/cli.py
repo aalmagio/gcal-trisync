@@ -15,7 +15,7 @@ from .auth import AuthError, check_all_tokens, format_token_report
 from .config import ConfigValidationError, load_config
 from .metrics import MetricsCollector
 from .models import Calendar, SyncContext
-from .storage import StateStorage
+from .storage import DEFAULT_LOCK_FILE, StateStorage, SyncLock
 from .sync import run_sync, run_sync_incremental
 
 logger = logging.getLogger(__name__)
@@ -112,6 +112,15 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         action='store_true',
         dest='clear_state',
         help='Clear saved state and exit'
+    )
+    parser.add_argument(
+        '--lock-file',
+        dest='lock_file',
+        default=DEFAULT_LOCK_FILE,
+        help=(
+            'Path to the lock file preventing overlapping runs '
+            f'(default: {DEFAULT_LOCK_FILE})'
+        )
     )
 
     # Metrics options
@@ -239,60 +248,73 @@ def main(args: list[str] | None = None) -> int:
         all_usable = all(info.is_usable() for info in infos)
         return 0 if all_usable else 1
 
-    # Initialize calendars
-    try:
-        calendars = initialize_calendars(
-            cfg,
-            parsed.auth,
-            parsed.login_hint,
-            parsed.port,
-            force_reauth=parsed.reauth,
+    # Prevent overlapping runs (e.g. a cron tick starting while a slow
+    # sync is still in progress), which would create duplicate copies
+    lock = SyncLock(parsed.lock_file)
+    if not lock.acquire():
+        logger.warning(
+            f"Another gcal_trisync instance is running "
+            f"(lock file: {parsed.lock_file}) — skipping this run"
         )
-    except AuthError as e:
-        logger.error(f"Authentication failed: {e}")
-        if e.status and e.status.value == 'revoked':
-            logger.info("Run with --reauth to re-authenticate this account")
-        return 1
-    except Exception as e:
-        logger.error(f"Failed to initialize calendars: {e}")
-        return 1
-
-    # Create sync context
-    ctx = SyncContext(config=cfg, dry_run=parsed.dry_run)
-    for name, cal in calendars.items():
-        ctx.add_calendar(cal)
-
-    # Run sync
-    mc = MetricsCollector(
-        dry_run=parsed.dry_run,
-        incremental=parsed.incremental
-    )
+        return 0
 
     try:
-        if parsed.incremental:
-            storage = StateStorage(parsed.state_file)
-            mc = run_sync_incremental(
-                ctx,
-                storage=storage,
-                force_full=parsed.force_full,
-                metrics=mc
+        # Initialize calendars
+        try:
+            calendars = initialize_calendars(
+                cfg,
+                parsed.auth,
+                parsed.login_hint,
+                parsed.port,
+                force_reauth=parsed.reauth,
             )
-        else:
-            mc = run_sync(ctx, metrics=mc)
-    except Exception as e:
-        logger.error(f"Sync failed: {e}")
-        return 1
+        except AuthError as e:
+            logger.error(f"Authentication failed: {e}")
+            if e.status and e.status.value == 'revoked':
+                logger.info("Run with --reauth to re-authenticate this account")
+            return 1
+        except Exception as e:
+            logger.error(f"Failed to initialize calendars: {e}")
+            return 1
 
-    # Display metrics report
-    if parsed.metrics and mc:
-        print(mc.report())
+        # Create sync context
+        ctx = SyncContext(config=cfg, dry_run=parsed.dry_run)
+        for cal in calendars.values():
+            ctx.add_calendar(cal)
 
-    # Save metrics to JSON
-    if parsed.metrics_json and mc:
-        mc.save_json(parsed.metrics_json)
+        # Run sync
+        mc = MetricsCollector(
+            dry_run=parsed.dry_run,
+            incremental=parsed.incremental
+        )
 
-    logger.info("Done.")
-    return 0
+        try:
+            if parsed.incremental:
+                storage = StateStorage(parsed.state_file)
+                mc = run_sync_incremental(
+                    ctx,
+                    storage=storage,
+                    force_full=parsed.force_full,
+                    metrics=mc
+                )
+            else:
+                mc = run_sync(ctx, metrics=mc)
+        except Exception as e:
+            logger.error(f"Sync failed: {e}")
+            return 1
+
+        # Display metrics report
+        if parsed.metrics and mc:
+            print(mc.report())
+
+        # Save metrics to JSON
+        if parsed.metrics_json and mc:
+            mc.save_json(parsed.metrics_json)
+
+        logger.info("Done.")
+        return 0
+    finally:
+        lock.release()
 
 
 if __name__ == '__main__':

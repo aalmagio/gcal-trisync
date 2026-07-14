@@ -17,6 +17,79 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 DEFAULT_STATE_FILE = '.trisync_state.json'
+DEFAULT_LOCK_FILE = '.trisync.lock'
+
+
+class SyncLock:
+    """
+    Cross-process lock that prevents overlapping sync runs.
+
+    Two concurrent runs (e.g. a cron tick starting while a slow sync is
+    still in progress) both see remote copies as "missing" and create
+    duplicates. This uses an advisory OS file lock (flock on POSIX,
+    msvcrt on Windows) which is released automatically by the kernel if
+    the process dies, so stale locks cannot occur.
+    """
+
+    def __init__(self, lock_file: str | Path = DEFAULT_LOCK_FILE):
+        """
+        Initialize the lock.
+
+        Args:
+            lock_file: Path to the lock file
+        """
+        self.lock_file = Path(lock_file)
+        self._fh: Optional[Any] = None
+
+    def acquire(self) -> bool:
+        """
+        Try to acquire the lock without blocking.
+
+        Returns:
+            True if acquired (or already held by this instance),
+            False if another process holds it
+        """
+        if self._fh is not None:
+            return True
+
+        fh = open(self.lock_file, 'a+', encoding='utf-8')
+        try:
+            if os.name == 'nt':
+                import msvcrt
+                fh.seek(0)
+                msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            fh.close()
+            return False
+
+        # Record the holder's PID for diagnostics
+        fh.seek(0)
+        fh.truncate()
+        fh.write(str(os.getpid()))
+        fh.flush()
+
+        self._fh = fh
+        return True
+
+    def release(self) -> None:
+        """Release the lock (no-op if not held)."""
+        if self._fh is None:
+            return
+
+        try:
+            if os.name == 'nt':
+                import msvcrt
+                self._fh.seek(0)
+                msvcrt.locking(self._fh.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(self._fh.fileno(), fcntl.LOCK_UN)
+        finally:
+            self._fh.close()
+            self._fh = None
 
 
 @dataclass
