@@ -247,7 +247,13 @@ class TokenManager:
         if token_dir:
             os.makedirs(token_dir, exist_ok=True)
 
-        with open(self.token_file, 'w', encoding='utf-8') as f:
+        # Restrict permissions: the token grants full calendar access
+        fd = os.open(
+            self.token_file,
+            os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+            0o600
+        )
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
             f.write(self._creds.to_json())
 
         logger.debug(f"[{self.account_name}] Token saved to {self.token_file}")

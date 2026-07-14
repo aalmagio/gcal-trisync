@@ -142,6 +142,8 @@ def canonical_event_dict(event: dict[str, Any]) -> dict[str, Any]:
         'description': event.get('description', ''),
         'start': event.get('start', {}),
         'end': event.get('end', {}),
+        # Google omits 'transparency' for busy events ('opaque' is the default)
+        'transparency': event.get('transparency', 'opaque'),
     }
 
 

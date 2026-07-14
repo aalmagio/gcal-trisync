@@ -42,6 +42,10 @@ sync_delete: true
 # are never modified by the sync and keep whatever visibility the user set.
 default_copy_visibility: private
 
+# Remove spurious copies created by mistake on their own origin calendar
+# (e.g. an "[ALMA] Event" copy on the ALMA calendar itself)
+cleanup_self_copies: true
+
 # Calendar Definitions
 # --------------------
 # Minimum 2 calendars required. Each calendar needs:

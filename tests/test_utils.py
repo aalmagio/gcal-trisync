@@ -118,7 +118,23 @@ class TestCanonicalEventDict:
     def test_empty_event(self):
         """Should handle empty event dict."""
         result = canonical_event_dict({})
-        assert len(result) == 5
+        assert len(result) == 6
+
+    def test_transparency_defaults_to_opaque(self):
+        """Missing transparency means busy ('opaque') per Google API."""
+        result = canonical_event_dict({'summary': 'Meeting'})
+        assert result['transparency'] == 'opaque'
+
+    def test_transparency_preserved(self):
+        """Free ('transparent') events should keep their state."""
+        result = canonical_event_dict({'transparency': 'transparent'})
+        assert result['transparency'] == 'transparent'
+
+    def test_busy_and_free_events_differ(self):
+        """A busy and a free event must not compare as equal."""
+        busy = canonical_event_dict({'summary': 'X'})
+        free = canonical_event_dict({'summary': 'X', 'transparency': 'transparent'})
+        assert busy != free
 
 
 class TestPrivateMeta:

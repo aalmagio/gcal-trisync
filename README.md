@@ -12,6 +12,7 @@ Sincronizza **bidirezionalmente** due o tre Google Calendar, mantenendo tutto in
 - **Cancellazione sicura** — se l'evento sparisce nell'origine, elimina le copie
 - **Filtri** per parole chiave e tipi evento (es. `fromGmail`)
 - **Visibilità configurabile** per le copie (private, public, confidential)
+- **Stato occupato/disponibile sincronizzato** — la `transparency` (busy/free) si propaga su tutti i calendari
 - **Sync incrementale** con sync token per sync veloci dopo il primo run
 - **Retry automatico** con backoff esponenziale + jitter su errori API
 - **Rate limiting** con algoritmo token bucket per rispettare le quote Google
@@ -223,6 +224,7 @@ Oppure con l'invocazione a modulo:
 | `skip_if_title_has_known_prefix` | bool | `true` | Salta eventi con prefisso di un altro calendario |
 | `sync_delete` | bool | `false` | Cancella le copie quando l'originale sparisce |
 | `default_copy_visibility` | string | `"private"` | Visibilità delle copie: `default`, `private`, `public`, `confidential` |
+| `cleanup_self_copies` | bool | `true` | Rimuove le copie spurie create per errore sul proprio calendario di origine (es. `[ALMA] Evento` sul calendario ALMA) |
 
 ### Opzioni per calendario
 
