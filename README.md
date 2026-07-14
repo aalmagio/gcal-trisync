@@ -12,6 +12,7 @@ Sincronizza **bidirezionalmente** due o tre Google Calendar, mantenendo tutto in
 - **Cancellazione sicura** — se l'evento sparisce nell'origine, elimina le copie
 - **Filtri** per parole chiave e tipi evento (es. `fromGmail`)
 - **Visibilità configurabile** per le copie (private, public, confidential)
+- **Stato occupato/disponibile sincronizzato** — la `transparency` (busy/free) si propaga su tutti i calendari
 - **Sync incrementale** con sync token per sync veloci dopo il primo run
 - **Retry automatico** con backoff esponenziale + jitter su errori API
 - **Rate limiting** con algoritmo token bucket per rispettare le quote Google
@@ -189,6 +190,7 @@ Lo stato dei token può essere: `valid`, `expiring_soon`, `expired`, `missing`, 
 | `--full-sync` | Forza sync completo (con `--incremental`) |
 | `--state-file FILE` | File di stato per i sync token (default: `.trisync_state.json`) |
 | `--clear-state` | Cancella lo stato salvato ed esci |
+| `--lock-file FILE` | File di lock contro esecuzioni sovrapposte (default: `.trisync.lock`) |
 | `--metrics` | Mostra report metriche dopo il sync |
 | `--metrics-json FILE` | Salva metriche in file JSON |
 | `--check-auth` | Verifica stato autenticazione ed esci |
@@ -208,6 +210,8 @@ Oppure con l'invocazione a modulo:
 */5 * * * * cd /path/to/gcal-trisync && /path/to/.venv/bin/python -m gcal_trisync --config config.yaml --incremental >> sync.log 2>&1
 ```
 
+Le esecuzioni sovrapposte sono gestite automaticamente: se un sync lento è ancora in corso quando parte il tick successivo, la nuova istanza rileva il lock (`.trisync.lock`), logga un avviso ed esce senza fare nulla. Il lock è a livello di sistema operativo e viene rilasciato automaticamente anche se il processo muore.
+
 ## Configurazione dettagliata
 
 ### Opzioni globali
@@ -223,6 +227,7 @@ Oppure con l'invocazione a modulo:
 | `skip_if_title_has_known_prefix` | bool | `true` | Salta eventi con prefisso di un altro calendario |
 | `sync_delete` | bool | `false` | Cancella le copie quando l'originale sparisce |
 | `default_copy_visibility` | string | `"private"` | Visibilità delle copie: `default`, `private`, `public`, `confidential` |
+| `cleanup_self_copies` | bool | `true` | Rimuove le copie spurie create per errore sul proprio calendario di origine (es. `[ALMA] Evento` sul calendario ALMA) |
 
 ### Opzioni per calendario
 

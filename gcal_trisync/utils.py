@@ -63,6 +63,8 @@ def canonical_event_dict(event: dict[str, Any]) -> dict[str, Any]:
         'description': event.get('description', ''),
         'start': event.get('start', {}),
         'end': event.get('end', {}),
+        # Google omits 'transparency' for busy events ('opaque' is the default)
+        'transparency': event.get('transparency', 'opaque'),
     }
 
 
@@ -161,3 +163,26 @@ def add_sync_note(description: str, note: str) -> str:
         return note
 
     return description
+
+
+def strip_sync_note(description: str, note: str) -> str:
+    """
+    Remove the sync note from a description.
+
+    Inverse of add_sync_note(): used to recover the base description
+    so the note never leaks back into original events.
+
+    Args:
+        description: Description possibly containing the note
+        note: Note to remove (may be None or empty)
+
+    Returns:
+        Description without the note
+    """
+    description = description or ''
+    note = note or ''
+
+    if not note or note not in description:
+        return description
+
+    return description.replace("\n\n" + note, "").replace(note, "").strip()

@@ -35,6 +35,7 @@ from .utils import (
     get_time_window,
     iso,
     set_private_meta,
+    strip_sync_note,
     title_with_origin,
 )
 from .sync import (
@@ -43,6 +44,7 @@ from .sync import (
     perform_safe_delete,
     process_chains,
     process_unsynced_events,
+    remove_self_copies,
     run_sync,
     run_sync_incremental,
     should_skip_event,
@@ -66,6 +68,7 @@ from .api import (
 from .storage import (
     CalendarState,
     StateStorage,
+    SyncLock,
     SyncState,
 )
 from .retry import (
@@ -115,6 +118,7 @@ __all__ = [
     'get_time_window',
     'iso',
     'set_private_meta',
+    'strip_sync_note',
     'title_with_origin',
 
     # Sync
@@ -123,6 +127,7 @@ __all__ = [
     'perform_safe_delete',
     'process_chains',
     'process_unsynced_events',
+    'remove_self_copies',
     'run_sync',
     'run_sync_incremental',
     'should_skip_event',
@@ -146,6 +151,7 @@ __all__ = [
     # Storage
     'CalendarState',
     'StateStorage',
+    'SyncLock',
     'SyncState',
 
     # Retry & Rate Limiting

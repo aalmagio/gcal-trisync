@@ -34,6 +34,7 @@ from .utils import (
     get_time_window,
     is_original_event,
     set_private_meta,
+    strip_sync_note,
     title_with_origin,
 )
 
@@ -145,6 +146,8 @@ def create_copy_with_visibility(
         'start': source_event.get('start', {}),
         'end': source_event.get('end', {}),
         'visibility': desired_copy_visibility(target_cal, cfg),
+        # Preserve busy/free state: absent means 'opaque' (busy)
+        'transparency': source_event.get('transparency', 'opaque'),
         'reminders': source_event.get('reminders', {'useDefault': True}),
     }
 
@@ -196,20 +199,32 @@ def update_if_diff(
     Returns:
         Tuple of (updated_event, was_changed)
     """
+    # Events from Gmail cannot be modified via the API
+    if (existing.get('eventType') or '') == 'fromGmail':
+        return existing, False
+
     changed = False
     ex = canonical_event_dict(existing)
     desired = dict(existing)
 
-    for key in ('location', 'description', 'start', 'end'):
+    for key in ('location', 'start', 'end', 'transparency'):
         if ex.get(key) != source_model.get(key):
             desired[key] = source_model.get(key)
             changed = True
 
-    # Ensure sync note is present
-    desired['description'] = add_sync_note(
-        desired.get('description', ''),
-        ctx.config.get('sync_tag_in_description', '')
-    )
+    # Description: compare on the base text (sync note stripped), so the
+    # note is kept on copies but never propagated back to the original
+    note = ctx.config.get('sync_tag_in_description', '')
+    base_desc = strip_sync_note(source_model.get('description', ''), note)
+
+    if is_original_event(existing, cal.name):
+        desired_desc = base_desc
+    else:
+        desired_desc = add_sync_note(base_desc, note)
+
+    if desired_desc != (existing.get('description') or ''):
+        desired['description'] = desired_desc
+        changed = True
 
     # Check visibility — only update copies, not original events
     if not is_original_event(existing, cal.name):
@@ -379,6 +394,128 @@ def process_unsynced_events(
         chain_map.setdefault(chain_id, []).append((src_name, ev))
 
 
+def _is_self_copy(
+    cal_name: str,
+    event: dict[str, Any],
+    chain_id: str
+) -> bool:
+    """
+    Detect a copy that was mistakenly created on its own origin calendar.
+
+    A genuine original satisfies chain_id == sha256(cal_name:event_id);
+    a self-copy claims the calendar as origin but has a different event ID
+    and carries the origin prefix in its title.
+
+    Args:
+        cal_name: Name of the calendar hosting the event
+        event: Event to check
+        chain_id: Chain ID of the chain being processed
+
+    Returns:
+        True if the event is a spurious self-copy
+    """
+    priv = get_private_meta(event)
+    if priv.get('trisync') != '1':
+        return False
+    if priv.get('trisync_origin') != cal_name:
+        return False
+    if priv.get('trisync_chain_id') != chain_id:
+        return False
+    if compute_chain_id(cal_name, event.get('id', '')) == chain_id:
+        return False  # real original
+    title = event.get('summary') or ''
+    return title.startswith(f"[{cal_name}] ")
+
+
+def remove_self_copies(
+    ctx: SyncContext,
+    chain_id: str,
+    items: list[tuple[str, dict[str, Any]]],
+    metrics: Optional[MetricsCollector] = None
+) -> list[tuple[str, dict[str, Any]]]:
+    """
+    Delete spurious self-copies from their origin calendar.
+
+    Controlled by the 'cleanup_self_copies' config key (default: True).
+
+    Args:
+        ctx: Sync context
+        chain_id: Chain ID of the chain being processed
+        items: List of (calendar_name, event) tuples
+        metrics: Optional metrics collector
+
+    Returns:
+        Items with removed self-copies filtered out
+    """
+    if not ctx.config.get('cleanup_self_copies', True):
+        return items
+
+    kept: list[tuple[str, dict[str, Any]]] = []
+
+    for name, ev in items:
+        if not _is_self_copy(name, ev, chain_id):
+            kept.append((name, ev))
+            continue
+
+        cal = ctx.get_calendar(name)
+        if not cal:
+            kept.append((name, ev))
+            continue
+
+        if ctx.dry_run:
+            logger.info(
+                f"[DRY-RUN] Would delete self-copy in {name}: "
+                f"'{(ev.get('summary') or '')[:40]}'"
+            )
+            if metrics:
+                metrics.record_delete(name)
+            continue
+
+        try:
+            delete_event(cal.service, cal.calendar_id, ev['id'])
+            logger.info(
+                f"[chain {chain_id[:8]}] Deleted self-copy in {name}: "
+                f"'{(ev.get('summary') or '')[:40]}'"
+            )
+            if metrics:
+                metrics.record_delete(name)
+        except HttpError as e:
+            logger.error(f"Self-copy delete failed on {name}: {e}")
+            if metrics:
+                metrics.record_error(name)
+            kept.append((name, ev))
+
+    return kept
+
+
+def _find_chain_origin(
+    items: list[tuple[str, dict[str, Any]]]
+) -> Optional[str]:
+    """
+    Determine the origin calendar of a chain.
+
+    Copies always carry trisync_origin metadata. An event without any
+    trisync metadata can only be an original that could not be tagged
+    (e.g. fromGmail events, or a failed metadata patch).
+
+    Args:
+        items: List of (calendar_name, event) tuples
+
+    Returns:
+        Origin calendar name, or None if it cannot be determined
+    """
+    for _, ev in items:
+        origin = get_private_meta(ev).get('trisync_origin')
+        if origin:
+            return origin
+
+    for name, ev in items:
+        if get_private_meta(ev).get('trisync') != '1':
+            return name
+
+    return None
+
+
 def process_chains(
     ctx: SyncContext,
     chain_map: dict[str, list[tuple[str, dict[str, Any]]]],
@@ -412,12 +549,18 @@ def process_chains(
 
         items = refreshed
 
+        # Remove copies mistakenly created on their own origin calendar
+        # before they can poison safe-delete or source-of-truth selection
+        items = remove_self_copies(ctx, chain_id, items, metrics=metrics)
+
         # Handle safe delete
         if perform_safe_delete(ctx, chain_id, items, metrics=metrics):
             continue
 
         if not items:
             continue
+
+        chain_origin = _find_chain_origin(items)
 
         # Find most recently updated event as source of truth
         def get_update_time(ev: dict[str, Any]) -> Any:
@@ -431,8 +574,16 @@ def process_chains(
             target_ev = find_event_by_chain(cal.service, cal.calendar_id, chain_id)
 
             if target_ev is None:
+                # Never create a copy on the chain's own origin calendar:
+                # the original may simply lack metadata there (fromGmail,
+                # failed patch) and a missing original is handled by
+                # perform_safe_delete — creating one here would duplicate
+                # the event on its own calendar with its own prefix
+                if chain_origin is not None and cal.name == chain_origin:
+                    continue
+
                 # Missing copy, create it
-                origin = get_private_meta(source_event).get('trisync_origin', source_name)
+                origin = chain_origin or source_name
                 try:
                     create_copy_with_visibility(
                         ctx, cal, source_event, origin, chain_id,
@@ -569,20 +720,13 @@ def run_sync_incremental(
             f"{len(result.deleted_event_ids)} deleted"
         )
 
-        # Save the new sync token
-        if not ctx.dry_run:
-            storage.update_calendar(
-                cal.name,
-                result.next_sync_token,
-                len(result.events),
-                result.is_full_sync
-            )
-
     # Handle deleted events from incremental sync
     for cal in ctx.get_all_calendars():
         result = cal_results[cal.name]
         if not result.is_full_sync and result.deleted_event_ids:
-            _handle_deleted_events(ctx, cal, result.deleted_event_ids)
+            _handle_deleted_events(
+                ctx, cal, result.deleted_event_ids, metrics=metrics
+            )
 
     # Build chain map and identify unsynced events
     chain_map: dict[str, list[tuple[str, dict[str, Any]]]] = {}
@@ -607,6 +751,19 @@ def run_sync_incremental(
     # Process existing chains
     process_chains(ctx, chain_map, metrics=metrics)
 
+    # Persist sync tokens only after processing completed: saving them
+    # before would permanently skip the fetched-but-unprocessed changes
+    # if the run crashes mid-way
+    if not ctx.dry_run:
+        for cal in ctx.get_all_calendars():
+            result = cal_results[cal.name]
+            storage.update_calendar(
+                cal.name,
+                result.next_sync_token,
+                len(result.events),
+                result.is_full_sync
+            )
+
     metrics.stop()
     logger.info("Incremental sync completed.")
     return metrics
@@ -615,45 +772,72 @@ def run_sync_incremental(
 def _handle_deleted_events(
     ctx: SyncContext,
     cal: Calendar,
-    deleted_ids: list[str]
+    deleted_ids: list[str],
+    metrics: Optional[MetricsCollector] = None
 ) -> None:
     """
     Handle events deleted from a calendar during incremental sync.
 
-    If a deleted event was the origin, delete copies in other calendars.
-    If it was a copy, ignore (origin still exists).
+    For origin events the chain ID is deterministic
+    (sha256(calendar_name:event_id)), so copies can be located on the
+    other calendars directly and deleted — no local index required.
+    If the deleted event was a copy, the recomputed chain ID matches
+    nothing here and the copy is recreated by regular chain processing.
 
     Args:
         ctx: Sync context
         cal: Calendar where events were deleted
         deleted_ids: IDs of deleted events
+        metrics: Optional metrics collector
     """
     if not ctx.config.get('sync_delete', False):
         return
 
     for event_id in deleted_ids:
-        # Try to find copies in other calendars
-        chain_id = None
+        chain_id = compute_chain_id(cal.name, event_id)
 
-        # We need to find if this was an origin or a copy
-        # Check other calendars for events with this chain
         for other_cal in ctx.get_all_calendars():
             if other_cal.name == cal.name:
                 continue
 
-            # Look for any event that references this as origin
-            # This is expensive but necessary for proper sync delete
             try:
-                # We'd need the chain_id to properly handle this
-                # For now, log a warning
-                pass
-            except HttpError:
-                pass
+                found = find_event_by_chain(
+                    other_cal.service, other_cal.calendar_id, chain_id
+                )
+            except HttpError as e:
+                logger.error(f"Chain lookup failed on {other_cal.name}: {e}")
+                if metrics:
+                    metrics.record_error(other_cal.name)
+                continue
 
-        # Note: Full chain resolution would require maintaining
-        # a local index. For now, rely on the regular chain processing
-        # which handles this case during full sync.
-        logger.debug(
-            f"Event {event_id} deleted from {cal.name}, "
-            "chain cleanup handled in next sync cycle"
-        )
+            if not found:
+                continue
+
+            # Only delete events this tool created as copies of the
+            # deleted origin
+            priv = get_private_meta(found)
+            if priv.get('trisync') != '1' or priv.get('trisync_origin') != cal.name:
+                continue
+
+            if ctx.dry_run:
+                logger.info(
+                    f"[DRY-RUN] Would delete in {other_cal.name} "
+                    f"(origin deleted on {cal.name}): "
+                    f"'{(found.get('summary') or '')[:40]}'"
+                )
+                if metrics:
+                    metrics.record_delete(other_cal.name)
+                continue
+
+            try:
+                delete_event(other_cal.service, other_cal.calendar_id, found['id'])
+                logger.info(
+                    f"[chain {chain_id[:8]}] Deleted in {other_cal.name} "
+                    f"(origin deleted on {cal.name})"
+                )
+                if metrics:
+                    metrics.record_delete(other_cal.name)
+            except HttpError as e:
+                logger.error(f"Delete failed on {other_cal.name}: {e}")
+                if metrics:
+                    metrics.record_error(other_cal.name)
